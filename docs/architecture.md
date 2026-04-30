@@ -1,0 +1,56 @@
+# Architecture
+
+## System Goal
+
+The system is organized as a deterministic INT16 neural video codec runtime.
+The architecture separates the fast FP16 research baseline from the INT16
+interoperability profile so that performance experiments do not blur the
+bitstream contract.
+
+## Planned Layers
+
+```text
+source video
+  -> preprocessing and padding
+  -> DMCI I-frame INT16 path
+  -> DMC P-frame INT16 path
+  -> frozen entropy model and rANS stream writer
+  -> deterministic .bin bitstream
+  -> rANS stream reader
+  -> INT16 decode and local reconstruction
+  -> output frames / MP4 mux
+```
+
+## Repository Modules
+
+- `src/utils/`: video IO, metrics, stream helpers, deterministic environment
+  setup, and equivalence metadata.
+- `src/cpp/`: rANS entropy-coder extension and future native helpers.
+- `src/layers/`: INT16 quantization contract, CUDA extension loader, CUDA
+  kernels, and backend runners.
+- `src/models/`: DMCI and DMC model wrappers, entropy models, and INT16
+  reference runtime.
+- `scripts/`: model export, entropy freezing, calibration, download, and
+  operational utilities.
+- `tests/`: parity, bundle-load, entropy-loop, and bitstream-equivalence tests.
+- `docs/`: design decisions, hardware constraints, validation protocol, and
+  performance evidence.
+- `assets/`: small metrics, manifests, and documentation evidence only.
+
+## Hardware Assumptions
+
+The target runtime is designed for CUDA-capable NVIDIA devices, including
+laptop GPUs and Jetson Orin-class edge hardware. CUDA extensions should degrade
+to slower Python/PyTorch reference paths when they cannot be built, but the
+performance profile assumes successful extension loading.
+
+Jetson-class devices are memory constrained relative to desktop GPUs. CUDA
+Graphs and preallocated activation pools must therefore remain configurable
+rather than hard-coded as always-on behavior.
+
+## Engineering Boundary
+
+This repository will not track checkpoints, generated bitstreams, raw video,
+YUV data, or large profiler dumps. Source commits should reference these
+artifacts through paths, checksums, small manifests, or structured summaries.
+

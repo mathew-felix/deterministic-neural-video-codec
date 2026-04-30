@@ -121,7 +121,7 @@ datasets/
 outputs/
 results/
 checkpoints/
-models/
+/models/
 *.pt
 *.pth
 *.ckpt
@@ -136,6 +136,8 @@ models/
 *.avi
 *.mov
 *.webm
+test.mp4
+test.mp4.mp4
 
 # Slurm / HPC outputs
 slurm-*.out

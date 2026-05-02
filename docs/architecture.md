@@ -48,9 +48,26 @@ Jetson-class devices are memory constrained relative to desktop GPUs. CUDA
 Graphs and preallocated activation pools must therefore remain configurable
 rather than hard-coded as always-on behavior.
 
+## CUDA Kernel Strategy
+
+The INT16 backend keeps the Python reference path as the correctness oracle,
+then routes eligible CUDA tensors through native kernels. The optimized path
+prioritizes three hot surfaces:
+
+- 1x1 convolutions use a blocked INT16 kernel with optional residual fusion
+  because these layers dominate channel mixing in the codec networks.
+- General convolutions use shared-memory tiling to reduce repeated global
+  memory loads while preserving the same signed rounding and clamp contract as
+  the reference implementation.
+- Depthwise 3x3 WSiLU-style blocks can fuse LUT activation with convolution,
+  avoiding a separate activation tensor write before the depthwise pass.
+
+These kernels are performance accelerators only. If the extension cannot be
+built for the local PyTorch/CUDA/toolchain combination, imports must still
+succeed and the runtime must fall back to the deterministic reference path.
+
 ## Engineering Boundary
 
 This repository will not track checkpoints, generated bitstreams, raw video,
 YUV data, or large profiler dumps. Source commits should reference these
 artifacts through paths, checksums, small manifests, or structured summaries.
-

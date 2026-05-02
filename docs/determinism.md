@@ -25,6 +25,11 @@ Tier A determinism means one of the following:
 Visual similarity, PSNR closeness, matching total byte counts, or successful
 decode alone are useful diagnostics, but they are not Tier A proof.
 
+Use `tools/compare_bitstreams.py` for local Tier A checks. It hashes every
+input bitstream, loads a sibling metrics JSON when present, and with
+`--expect_equal` performs a byte-for-byte comparison that exits non-zero on the
+first mismatch.
+
 ## Why INT16
 
 The FP16 path is the speed-oriented deployment path. It is appropriate for
@@ -46,4 +51,3 @@ for cross-device codec behavior.
   reconstruction and entropy contexts enough to break rate-distortion quality.
 - Jetson-class devices may need different graph and memory settings even when
   bitstream semantics remain the same.
-

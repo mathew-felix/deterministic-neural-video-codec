@@ -66,6 +66,17 @@ These kernels are performance accelerators only. If the extension cannot be
 built for the local PyTorch/CUDA/toolchain combination, imports must still
 succeed and the runtime must fall back to the deterministic reference path.
 
+## CUDA Graphs And Equivalence Checks
+
+The INT16 reference runtime includes fixed-shape CUDA graph caches for stable
+subgraphs. Graph capture is a launch-overhead optimization; dynamic entropy
+coding, mutable DPB state, and reset-frame behavior remain outside any
+determinism claim unless the produced `.bin` stream is checked directly.
+
+Local equivalence checks live in `tools/compare_bitstreams.py` and
+`src/utils/equivalence.py`. The tool reports SHA-256 digests, sibling metrics
+JSON metadata when present, and optional byte-for-byte comparison results.
+
 ## Engineering Boundary
 
 This repository will not track checkpoints, generated bitstreams, raw video,

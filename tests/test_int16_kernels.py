@@ -27,18 +27,18 @@ class Int16CudaKernelParityTest(unittest.TestCase):
         from src.layers.int16_cuda_ext import conv2d_int16
 
         input_i16 = torch.tensor(
-            [[[[3, -2, 5, 1], [0, 4, -1, 2], [6, -3, 1, 0], [2, 1, -4, 3]]]],
+            [[[[300, -200, 500, 100], [0, 400, -100, 200], [600, -300, 100, 0], [200, 100, -400, 300]]]],
             dtype=torch.int16,
         )
         weight = torch.tensor(
-            [[[[2, -1, 0], [1, 3, -2], [0, 1, 2]]]],
+            [[[[200, -100, 0], [100, 300, -200], [0, 100, 200]]]],
             dtype=torch.int16,
         )
-        bias = torch.tensor([7], dtype=torch.int32)
+        bias = torch.tensor([700], dtype=torch.int32)
         params = Conv2dInt16Params(
             weight=weight,
             bias=bias,
-            k2_layer=1,
+            k2_layer=8192,
             stride=1,
             padding=1,
             groups=1,
@@ -52,7 +52,7 @@ class Int16CudaKernelParityTest(unittest.TestCase):
             stride=1,
             padding=1,
             groups=1,
-            k2_layer=1,
+            k2_layer=8192,
         ).cpu()
 
         self.assertTrue(torch.equal(actual, expected.to(torch.int16)))
@@ -110,25 +110,25 @@ class Int16CudaKernelParityTest(unittest.TestCase):
         input_i16 = torch.tensor(
             [
                 [
-                    [[-3, -2, -1, 0], [1, 2, 3, 4], [-4, -3, -2, -1], [0, 1, 2, 3]],
-                    [[2, 1, 0, -1], [-2, -3, -4, -5], [5, 4, 3, 2], [1, 0, -1, -2]],
+                    [[-300, -200, -100, 0], [100, 200, 300, 400], [-400, -300, -200, -100], [0, 100, 200, 300]],
+                    [[200, 100, 0, -100], [-200, -300, -400, -500], [500, 400, 300, 200], [100, 0, -100, -200]],
                 ]
             ],
             dtype=torch.int16,
         )
         weight = torch.tensor(
             [
-                [[[1, 0, -1], [2, 1, 0], [-1, 0, 1]]],
-                [[[0, 1, 0], [1, -2, 1], [0, 1, 0]]],
+                [[[100, 0, -100], [200, 100, 0], [-100, 0, 100]]],
+                [[[0, 100, 0], [100, -200, 100], [0, 100, 0]]],
             ],
             dtype=torch.int16,
         )
-        bias = torch.tensor([1, -1], dtype=torch.int32)
+        bias = torch.tensor([100, -100], dtype=torch.int32)
         lut = torch.arange(INT16_MIN, INT16_MAX + 1, dtype=torch.int32).to(torch.int16)
         params = Conv2dInt16Params(
             weight=weight,
             bias=bias,
-            k2_layer=1,
+            k2_layer=8192,
             stride=1,
             padding=1,
             groups=2,

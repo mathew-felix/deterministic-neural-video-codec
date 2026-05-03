@@ -1,6 +1,7 @@
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from functools import lru_cache
 
@@ -10,6 +11,7 @@ import torch.utils.cpp_extension as cpp_ext
 
 _EXT = None
 _LOAD_ERROR = None
+_DLL_DIR_HANDLES = []
 
 
 def _get_cuda_arch_flags():
@@ -30,23 +32,53 @@ def _get_sources():
 
 def _get_vcvars_candidates():
     return [
-        r"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat",
-        r"C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat",
-        r"C:\Program Files (x86)\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat",
-        r"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat",
+        (
+            r"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat",
+            ["amd64", "-vcvars_ver=14.29"],
+        ),
+        (
+            r"C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat",
+            ["amd64", "-vcvars_ver=14.29"],
+        ),
+        (
+            r"C:\Program Files (x86)\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat",
+            ["amd64", "-vcvars_ver=14.29"],
+        ),
+        (
+            r"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat",
+            ["amd64", "-vcvars_ver=14.29"],
+        ),
+        (
+            r"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat",
+            [],
+        ),
+        (
+            r"C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat",
+            [],
+        ),
     ]
+
+
+def _cl_looks_cuda_12_compatible(cl_path):
+    if os.name != "nt":
+        return True
+    normalized = os.path.normcase(cl_path or "")
+    return "\\14.29." in normalized or "\\14.3" in normalized
 
 
 def _ensure_msvc_env():
     if os.name != "nt":
         return
-    if shutil.which("cl"):
+    cl_path = shutil.which("cl")
+    if cl_path and _cl_looks_cuda_12_compatible(cl_path):
         return
 
     vcvars_path = None
-    for candidate in _get_vcvars_candidates():
+    vcvars_args = []
+    for candidate, args in _get_vcvars_candidates():
         if os.path.exists(candidate):
             vcvars_path = candidate
+            vcvars_args = args
             break
     if vcvars_path is None:
         return
@@ -56,7 +88,8 @@ def _ensure_msvc_env():
         os.close(script_fd)
         with open(script_path, "w", encoding="utf-8") as handle:
             handle.write("@echo off\n")
-            handle.write(f"call \"{vcvars_path}\" >nul\n")
+            args = " ".join(vcvars_args)
+            handle.write(f"call \"{vcvars_path}\" {args} >nul\n")
             handle.write("set\n")
         output = subprocess.check_output(
             ["cmd.exe", "/d", "/s", "/c", script_path],
@@ -72,6 +105,20 @@ def _ensure_msvc_env():
         os.environ[key] = value
 
 
+def _ensure_windows_dll_dirs():
+    if os.name != "nt" or not hasattr(os, "add_dll_directory"):
+        return
+    global _DLL_DIR_HANDLES
+    candidates = []
+    cuda_home = os.environ.get("CUDA_HOME") or os.environ.get("CUDA_PATH")
+    if cuda_home:
+        candidates.append(os.path.join(cuda_home, "bin"))
+    candidates.append(os.path.join(os.path.dirname(torch.__file__), "lib"))
+    for candidate in candidates:
+        if os.path.isdir(candidate):
+            _DLL_DIR_HANDLES.append(os.add_dll_directory(candidate))
+
+
 @lru_cache(maxsize=1)
 def load_int16_ext():
     global _EXT
@@ -84,14 +131,27 @@ def load_int16_ext():
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is not available; cannot load int16 CUDA extension.")
     _ensure_msvc_env()
+    _ensure_windows_dll_dirs()
 
     extra_cuda_cflags = ["-O3", "--use_fast_math"]
+    extra_cflags = []
+    if os.name == "nt":
+        extra_cuda_cflags.extend(["-allow-unsupported-compiler", "-Xcompiler", "/Zc:preprocessor"])
+        extra_cflags.append("/Zc:preprocessor")
+        cl_path = shutil.which("cl")
+        if cl_path:
+            extra_cuda_cflags.extend(["-ccbin", cl_path])
     extra_cuda_cflags.extend(_get_cuda_arch_flags())
     extra_ldflags = ["cublas.lib"] if os.name == "nt" else ["-lcublas"]
+    if os.name == "nt":
+        python_lib_dir = os.path.join(sys.base_prefix, "libs")
+        if os.path.isdir(python_lib_dir):
+            extra_ldflags.append(f"/LIBPATH:{python_lib_dir}")
     try:
         _EXT = cpp_ext.load(
             name="int16_cuda_ext",
             sources=_get_sources(),
+            extra_cflags=extra_cflags,
             extra_cuda_cflags=extra_cuda_cflags,
             extra_ldflags=extra_ldflags,
             verbose=False,

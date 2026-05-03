@@ -77,6 +77,13 @@ Local equivalence checks live in `tools/compare_bitstreams.py` and
 `src/utils/equivalence.py`. The tool reports SHA-256 digests, sibling metrics
 JSON metadata when present, and optional byte-for-byte comparison results.
 
+## Experimental INT8 Route
+
+The runtime contains a gated INT8 Tensor Core prototype for eligible 1x1
+convolutions. It is disabled by default and documented as an engineering pivot
+in `docs/int8_pivot.md`. Pure INT16 remains the default interoperability
+profile; INT8 runs require separate bitstream-equivalence and quality evidence.
+
 ## Engineering Boundary
 
 This repository will not track checkpoints, generated bitstreams, raw video,

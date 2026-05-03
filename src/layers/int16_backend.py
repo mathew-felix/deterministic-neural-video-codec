@@ -87,6 +87,8 @@ def is_int8_kernel_candidate(params):
     return (
         params.weight_int8 is not None
         and params.groups == 1
+        and params.stride == 1
+        and params.padding == 0
         and params.weight.dim() == 4
         and params.weight.shape[2] == 1
         and params.weight.shape[3] == 1

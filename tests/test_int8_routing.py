@@ -16,6 +16,16 @@ class Int8RoutingTest(unittest.TestCase):
         with mock.patch.dict(os.environ, {}, clear=True):
             self.assertFalse(int8_tensor_cores_enabled())
 
+    def test_int8_tensor_core_gate_requires_explicit_one(self):
+        from src.layers.int16_backend import int8_tensor_cores_enabled
+
+        with mock.patch.dict(os.environ, {"DCVC_ENABLE_INT8_TC": "0"}):
+            self.assertFalse(int8_tensor_cores_enabled())
+        with mock.patch.dict(os.environ, {"DCVC_ENABLE_INT8_TC": "false"}):
+            self.assertFalse(int8_tensor_cores_enabled())
+        with mock.patch.dict(os.environ, {"DCVC_ENABLE_INT8_TC": "1"}):
+            self.assertTrue(int8_tensor_cores_enabled())
+
     def test_single_layer_gate_overrides_default_allowlist(self):
         from src.layers.int16_backend import is_int8_layer_eligible
 

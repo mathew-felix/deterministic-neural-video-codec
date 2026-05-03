@@ -14,6 +14,9 @@ claim is valid only when the following inputs are fixed:
 - CUDA device class, driver/runtime versions, and PyTorch build.
 - Codec source revision and dirty-state status.
 
+The gold profile excludes experimental INT8 Tensor Core routing. Keep
+`DCVC_ENABLE_INT8_TC` unset or set to `0` for pure INT16 determinism claims.
+
 ## Tier A Evidence
 
 Tier A determinism means one of the following:
@@ -48,6 +51,7 @@ for cross-device codec behavior.
 - Entropy CDFs must be frozen and bundled rather than rebuilt implicitly.
 - CUDA Graph capture must not hide mutable state or reset-path differences.
 - Experimental INT8 Tensor Core paths can be fast but may perturb
-  reconstruction and entropy contexts enough to break rate-distortion quality.
+  reconstruction and entropy contexts enough to break rate-distortion quality;
+  treat them as separate experiments, not as the deterministic profile.
 - Jetson-class devices may need different graph and memory settings even when
   bitstream semantics remain the same.

@@ -28,6 +28,12 @@ class EncodeProfileCliTest(unittest.TestCase):
         self.assertFalse(flags["encode_only"])
         self.assertFalse(flags["profile_pframe_stages"])
 
+    def test_check_only_flag_is_available_on_packaged_encoder(self):
+        args = encode_mp4_to_bin.parse_args(["--check_only", "--frames", "2"])
+
+        self.assertTrue(args.check_only)
+        self.assertEqual(args.frames, 2)
+
     def test_profile_summary_orders_gpu_hot_stages(self):
         profile = {
             "summary": {

@@ -2,9 +2,16 @@
 # Licensed under the MIT License.
 
 import os
+import sys
+from pathlib import Path
 
 import torch
 import torch.nn.functional as F
+
+
+INFERENCE_EXTENSION_DIR = Path(__file__).resolve().parent / "extensions" / "inference"
+if INFERENCE_EXTENSION_DIR.exists() and str(INFERENCE_EXTENSION_DIR) not in sys.path:
+    sys.path.insert(0, str(INFERENCE_EXTENSION_DIR))
 
 
 CUSTOMIZED_CUDA_INFERENCE = False

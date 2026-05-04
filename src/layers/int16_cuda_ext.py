@@ -30,6 +30,33 @@ def _get_sources():
     ]
 
 
+def _prepend_path(path):
+    if not path or not os.path.isdir(path):
+        return
+    entries = os.environ.get("PATH", "").split(os.pathsep)
+    norm_path = os.path.normcase(os.path.abspath(path))
+    if any(os.path.normcase(os.path.abspath(entry)) == norm_path for entry in entries if entry):
+        return
+    os.environ["PATH"] = path + os.pathsep + os.environ.get("PATH", "")
+
+
+def _ensure_python_scripts_on_path():
+    scripts_dir = os.path.dirname(sys.executable)
+    _prepend_path(scripts_dir)
+
+
+def _ensure_matching_cuda_home():
+    if os.name != "nt" or torch.version.cuda is None:
+        return
+    version = torch.version.cuda
+    candidate = rf"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v{version}"
+    if os.path.isdir(candidate):
+        os.environ["CUDA_HOME"] = candidate
+        os.environ["CUDA_PATH"] = candidate
+        cpp_ext.CUDA_HOME = candidate
+        _prepend_path(os.path.join(candidate, "bin"))
+
+
 def _get_vcvars_candidates():
     return [
         (
@@ -130,6 +157,8 @@ def load_int16_ext():
         raise _LOAD_ERROR
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is not available; cannot load int16 CUDA extension.")
+    _ensure_python_scripts_on_path()
+    _ensure_matching_cuda_home()
     _ensure_msvc_env()
     _ensure_windows_dll_dirs()
 

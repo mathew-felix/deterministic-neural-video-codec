@@ -1,4 +1,6 @@
 import math
+import sys
+from pathlib import Path
 
 import torch
 import numpy as np
@@ -6,6 +8,11 @@ from torch import nn
 import torch.nn.functional as F
 
 from ..layers.cuda_inference import build_index_dec, build_index_enc, process_with_mask
+
+
+CPP_EXTENSION_DIR = Path(__file__).resolve().parents[1] / "cpp"
+if CPP_EXTENSION_DIR.exists() and str(CPP_EXTENSION_DIR) not in sys.path:
+    sys.path.insert(0, str(CPP_EXTENSION_DIR))
 
 
 class EntropyCoder():

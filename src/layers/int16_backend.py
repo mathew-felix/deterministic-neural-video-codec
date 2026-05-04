@@ -702,8 +702,29 @@ def _maybe_pad_int32(x, padding):
     return F.pad(x, (padding, padding, padding, padding))
 
 
+def _conv2d_output_shape(input_i16, params):
+    padded_h = input_i16.shape[2] + 2 * int(params.padding)
+    padded_w = input_i16.shape[3] + 2 * int(params.padding)
+    kernel_h = params.weight.shape[2]
+    kernel_w = params.weight.shape[3]
+    out_h = (padded_h - kernel_h) // int(params.stride) + 1
+    out_w = (padded_w - kernel_w) // int(params.stride) + 1
+    return (input_i16.shape[0], params.weight.shape[0], out_h, out_w)
+
+
+def _validate_conv_residual_shape(residual, output_shape):
+    if residual is None:
+        return
+    if tuple(residual.shape) != tuple(output_shape):
+        raise RuntimeError(
+            "Fused INT16 residual shape mismatch: "
+            f"expected {tuple(output_shape)}, got {tuple(residual.shape)}"
+        )
+
+
 def conv2d_int16_reference(input_i16, params, quant_cfg=None, residual=None):
     quant_cfg = quant_cfg or Int16QuantConfig()
+    _validate_conv_residual_shape(residual, _conv2d_output_shape(input_i16, params))
     x = input_i16.to(torch.int32)
     w = params.weight.to(torch.int32)
     x = _maybe_pad_int32(x, params.padding)
@@ -732,6 +753,7 @@ def conv2d_int16_reference(input_i16, params, quant_cfg=None, residual=None):
 
 def conv2d_int16(input_i16, params, quant_cfg=None, residual=None):
     quant_cfg = quant_cfg or Int16QuantConfig()
+    _validate_conv_residual_shape(residual, _conv2d_output_shape(input_i16, params))
     if params.activation_observer is not None and is_int8_kernel_candidate(params):
         params.activation_observer(params.module_name, input_i16)
     if USE_CUDA_KERNELS and input_i16.is_cuda:

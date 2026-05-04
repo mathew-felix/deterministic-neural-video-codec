@@ -42,3 +42,22 @@ python encode_mp4_to_bin.py --input_mp4 .\test.mp4 --frames 2 --check_only
 
 If the local clip has a different filename, pass it explicitly. Full encoding
 requires `models/int16_reference_bundle_v2_calibrated.pt`.
+
+## Commit 13 Residual Fusion
+
+The INT16 backend now routes residual additions through the convolution call
+site instead of launching a separate tensor add after every residual block.
+For eligible layers this saves one intermediate tensor write and one later read
+from global GPU memory. The CUDA extension accepts an optional residual tensor
+for both the generic `conv2d_int16` entrypoint and the optimized `1x1` path.
+
+The fallback Python reference applies the same contract:
+
+- convolution accumulation uses the existing INT16 quantization scale,
+- the residual tensor is added after requantization,
+- the final value is clamped to signed INT16 range,
+- residual shape must match the convolution output shape exactly.
+
+The shape check is intentionally performed before CUDA dispatch. A residual
+shape mismatch would otherwise be a silent memory-indexing risk in a fused
+kernel, and silent residual drift would invalidate bitstream equivalence.

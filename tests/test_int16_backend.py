@@ -40,6 +40,49 @@ class Int16BackendSmokeTest(unittest.TestCase):
         self.assertEqual(quantized.dtype, torch.int16)
         self.assertTrue(torch.allclose(source, restored, atol=1.0 / config.feature_scale))
 
+    def test_conv2d_reference_fuses_residual_with_saturation(self):
+        import torch
+
+        from src.layers.int16_backend import Conv2dInt16Params, conv2d_int16_reference
+
+        input_i16 = torch.tensor([[[[8, -8], [4, -4]]]], dtype=torch.int16)
+        weight = torch.tensor([[[[1]]]], dtype=torch.int16)
+        bias = torch.tensor([0], dtype=torch.int32)
+        residual = torch.tensor([[[[32760, -32760], [3, -3]]]], dtype=torch.int16)
+        params = Conv2dInt16Params(
+            weight=weight,
+            bias=bias,
+            k2_layer=1,
+            stride=1,
+            padding=0,
+            groups=1,
+        )
+
+        actual = conv2d_int16_reference(input_i16, params, residual=residual)
+        expected = torch.tensor([[[[32767, -32768], [7, -7]]]], dtype=torch.int16)
+
+        self.assertTrue(torch.equal(actual, expected))
+
+    def test_conv2d_residual_shape_must_match_output_shape(self):
+        import torch
+
+        from src.layers.int16_backend import Conv2dInt16Params, conv2d_int16_reference
+
+        input_i16 = torch.ones((1, 1, 4, 4), dtype=torch.int16)
+        weight = torch.ones((2, 1, 3, 3), dtype=torch.int16)
+        residual = torch.ones((1, 2, 4, 4), dtype=torch.int16)
+        params = Conv2dInt16Params(
+            weight=weight,
+            bias=None,
+            k2_layer=1,
+            stride=1,
+            padding=0,
+            groups=1,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "Fused INT16 residual shape mismatch"):
+            conv2d_int16_reference(input_i16, params, residual=residual)
+
 
 if __name__ == "__main__":
     unittest.main()

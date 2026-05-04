@@ -133,6 +133,77 @@ class EntropyRoundtripTest(unittest.TestCase):
         self.assertEqual(qp, 21)
         self.assertEqual(restored_stream, bit_stream)
 
+    def test_index_mismatch_reports_reset_frame_context(self):
+        import torch
+
+        from src.layers.int16_backend import quantize_scalar_to_int16
+
+        _entropy_coder, reference, quant_cfg, _device = self._make_reference()
+        scales = torch.full(
+            (1, 1, 1, 2),
+            quantize_scalar_to_int16(1.0, quant_cfg),
+            dtype=torch.int16,
+        )
+        symbols = torch.tensor([1, -1], dtype=torch.int16).reshape(scales.shape)
+        packed_stream = reference.build_indexes_encoder(symbols, scales)
+        expected_indexes, skip_cond = reference.build_indexes_decoder(scales)
+        mismatched_indexes = expected_indexes.clone()
+        mismatched_indexes[0] += 1
+
+        reference.set_debug_context(
+            frame_idx=33,
+            stage="decompress_prior_2x",
+            stream_idx=0,
+        )
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"frame_idx=33.*decompress_prior_2x.*stream_idx=0",
+        ):
+            reference.unpack_stream(
+                packed_stream,
+                scales.shape,
+                skip_cond=skip_cond,
+                expected_indexes=mismatched_indexes,
+            )
+
+
+@unittest.skipIf(importlib.util.find_spec("torch") is None, "PyTorch is not installed")
+class PFrameResetStateTest(unittest.TestCase):
+    """Guard the P-frame reset state transition that keeps entropy indexes aligned."""
+
+    def test_use_ada_i_reset_rebuilds_matching_encoder_and_decoder_frames(self):
+        import torch
+
+        from src.models.int16_reference import DMCInt16Reference, Int16RefFrame
+
+        reference = object.__new__(DMCInt16Reference)
+        feature = torch.tensor([[[[7, -3], [2, 5]]]], dtype=torch.int16)
+        reference.encoder_dpb = [
+            Int16RefFrame(feature=feature.clone(), frame=None, poc=32),
+        ]
+        reference.decoder_dpb = [
+            Int16RefFrame(feature=feature.clone(), frame=None, poc=32),
+        ]
+
+        calls = []
+
+        def reconstruct_frame(feature_tensor, qp):
+            calls.append((feature_tensor.clone(), qp))
+            return (feature_tensor.to(torch.int32) + 1).to(torch.int16)
+
+        reference.reconstruct_frame = reconstruct_frame
+
+        reference.prepare_feature_adaptor_i(last_qp=21)
+        reference.reset_ref_feature()
+
+        enc_ref = reference.encoder_dpb[0]
+        dec_ref = reference.decoder_dpb[0]
+        self.assertIsNone(enc_ref.feature)
+        self.assertIsNone(dec_ref.feature)
+        self.assertTrue(torch.equal(enc_ref.frame, dec_ref.frame))
+        self.assertTrue(DMCInt16Reference._dpb_heads_match(reference))
+        self.assertEqual([qp for _feature_tensor, qp in calls], [21, 21])
+
 
 if __name__ == "__main__":
     unittest.main()

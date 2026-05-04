@@ -136,8 +136,10 @@ checkpoints/
 *.avi
 *.mov
 *.webm
-test.mp4
-test.mp4.mp4
+
+# Local smoke-test clips
+/test.mp4
+/test.mp4.mp4
 
 # Slurm / HPC outputs
 slurm-*.out

@@ -11,6 +11,7 @@ USE_CUDA_KERNELS = False
 INT16_CUDA_EXT_ERROR = None
 try:
     from .int16_cuda_ext import (
+        conv1x1_int16_gemm_wsilu_chunk as _cuda_conv1x1_int16_gemm_wsilu_chunk,
         add_multiply_int16 as _cuda_add_multiply_int16,
         clamp_reciprocal_int16 as _cuda_clamp_reciprocal_int16,
         conv2d_int16 as _cuda_conv2d_int16,
@@ -723,7 +724,7 @@ def _validate_conv_residual_shape(residual, output_shape):
         )
 
 
-def conv2d_int16_reference(input_i16, params, quant_cfg=None, residual=None, post_scale=None):
+def conv2d_int16_reference(input_i16, params, quant_cfg=None, residual=None, residual2=None, post_scale=None):
     quant_cfg = quant_cfg or Int16QuantConfig()
     _validate_conv_residual_shape(residual, _conv2d_output_shape(input_i16, params))
     x = input_i16.to(torch.int32)
@@ -749,13 +750,15 @@ def conv2d_int16_reference(input_i16, params, quant_cfg=None, residual=None, pos
     out = round_divide_by_scalar(acc.to(torch.int64), int(params.k2_layer))
     if residual is not None:
         out = clamp_int16(out + residual.to(torch.int32))
+    if residual2 is not None:
+        out = clamp_int16(out.to(torch.int32) + residual2.to(torch.int32))
     if post_scale is not None:
         post_scale = post_scale.to(device=out.device, dtype=torch.int16).reshape(1, -1, 1, 1)
         out = multiply_int16(out.to(torch.int16), post_scale, quant_cfg.feature_scale)
     return out
 
 
-def conv2d_int16(input_i16, params, quant_cfg=None, residual=None, post_scale=None):
+def conv2d_int16(input_i16, params, quant_cfg=None, residual=None, residual2=None, post_scale=None):
     quant_cfg = quant_cfg or Int16QuantConfig()
     _validate_conv_residual_shape(residual, _conv2d_output_shape(input_i16, params))
     if params.activation_observer is not None and is_int8_kernel_candidate(params):
@@ -816,13 +819,14 @@ def conv2d_int16(input_i16, params, quant_cfg=None, residual=None, post_scale=No
             None if activation_scale_c is None else activation_scale_c.contiguous(),
             None if runtime_scale_c is None else runtime_scale_c.contiguous(),
             residual=residual.contiguous() if residual is not None else None,
+            residual2=residual2.contiguous() if residual2 is not None else None,
             post_scale=None if post_scale is None else post_scale.to(
                 device=input_i16.device,
                 dtype=torch.int16,
                 non_blocking=True,
             ).reshape(-1).contiguous(),
         )
-    return conv2d_int16_reference(input_i16, params, quant_cfg, residual=residual, post_scale=post_scale)
+    return conv2d_int16_reference(input_i16, params, quant_cfg, residual=residual, residual2=residual2, post_scale=post_scale)
 
 
 def depthwise_conv3x3_lut_fused_int16(input_i16, params, lut, quant_cfg=None):
@@ -897,6 +901,53 @@ def wsilu_chunk_add_int16(x, wsilu_lut):
     activated = wsilu_int16(x, wsilu_lut)
     x0, x1 = activated.chunk(2, dim=1)
     return add_int16(x0, x1)
+
+
+
+
+def conv2d_wsilu_chunk_int16(input_i16, params, wsilu_lut, quant_cfg=None):
+    """Fused 1x1 conv + WSiLU-chunk-add.
+
+    Replaces the two-step sequence:
+        out = conv2d_int16(x, ffn_conv1_params)
+        out = wsilu_chunk_add_int16(out, wsilu_lut)
+
+    Eligibility: 1x1 conv, stride=1, padding=0, groups=1, CUDA available.
+    Falls back to the unfused path when conditions are not met.
+    """
+    quant_cfg = quant_cfg or Int16QuantConfig()
+    weight = params.weight
+    can_fuse = (
+        USE_CUDA_KERNELS
+        and input_i16.is_cuda
+        and weight.dim() == 4
+        and weight.shape[2] == 1
+        and weight.shape[3] == 1
+        and params.stride == 1
+        and params.padding == 0
+        and params.groups == 1
+        and weight.shape[0] % 2 == 0
+    )
+    if can_fuse:
+        bias = params.bias
+        if bias is None:
+            bias = torch.empty(0, dtype=torch.int32, device=input_i16.device)
+        else:
+            bias = bias.to(device=input_i16.device, dtype=torch.int32, non_blocking=True)
+        weight_2d = weight.reshape(weight.shape[0], weight.shape[1]).to(
+            device=input_i16.device, dtype=torch.int16, non_blocking=True
+        ).contiguous()
+        lut = wsilu_lut.to(device=input_i16.device, dtype=torch.int16, non_blocking=True)
+        return _cuda_conv1x1_int16_gemm_wsilu_chunk(
+            input_i16.contiguous(),
+            weight_2d,
+            bias.contiguous() if bias is not None else None,
+            lut.contiguous(),
+            int(params.k2_layer),
+        )
+    # Fallback: unfused path
+    out = conv2d_int16(input_i16, params, quant_cfg)
+    return wsilu_chunk_add_int16(out, wsilu_lut)
 
 
 def sigmoid_int16(x, sigmoid_lut):
@@ -1152,9 +1203,12 @@ class SequentialInt16Runner:
     def __init__(self, runners):
         self.runners = list(runners)
 
-    def forward(self, x):
-        for runner in self.runners:
-            x = runner.forward(x)
+    def forward(self, x, quant_step=None):
+        for i, runner in enumerate(self.runners):
+            if i == len(self.runners) - 1 and quant_step is not None:
+                x = _forward_with_quant_fuse(runner, x, quant_step, None)
+            else:
+                x = runner.forward(x)
         return x
 
     def to(self, device):
@@ -1162,6 +1216,26 @@ class SequentialInt16Runner:
             if hasattr(runner, "to"):
                 runner.to(device)
         return self
+
+
+def _forward_with_quant_fuse(runner, x, quant_step, quant_cfg):
+    """Forward through runner, fusing quant_step into the final conv epilogue
+    when the runner supports it. Falls back to separate multiply_int16.
+
+    This eliminates a dedicated pointwise multiply kernel launch by folding
+    the scale into the convolution's post_scale epilogue inside
+    DepthConvBlockInt16Runner or SequentialInt16Runner.
+    """
+    if quant_step is None:
+        return runner.forward(x)
+    if isinstance(runner, DepthConvBlockInt16Runner):
+        return runner.forward(x, quant_step=quant_step)
+    if isinstance(runner, SequentialInt16Runner):
+        return runner.forward(x, quant_step=quant_step)
+    # Fallback: run unfused and apply multiply separately.
+    out = runner.forward(x)
+    cfg = quant_cfg if quant_cfg is not None else Int16QuantConfig()
+    return multiply_int16(out, quant_step, cfg.feature_scale)
 
 
 class SubpelConv2xInt16Runner:
@@ -1223,19 +1297,17 @@ class DepthConvBlockInt16Runner:
         out = conv2d_int16(out, self.params.dc_conv2, self.quant_cfg, residual=identity)
 
         ffn_identity = out
-        out = conv2d_int16(out, self.params.ffn_conv1, self.quant_cfg)
-        out = wsilu_chunk_add_int16(out, self.wsilu_lut)
-        fuse_quant_step = quant_step is not None and not self.params.shortcut
+        out = conv2d_wsilu_chunk_int16(out, self.params.ffn_conv1, self.wsilu_lut, self.quant_cfg)
+        fuse_quant_step = quant_step is not None
         out = conv2d_int16(
             out,
             self.params.ffn_conv2,
             self.quant_cfg,
             residual=ffn_identity,
+            residual2=identity if self.params.shortcut else None,
             post_scale=quant_step if fuse_quant_step else None,
         )
 
-        if self.params.shortcut:
-            out = add_int16(out, identity)
         if quant_step is not None and not fuse_quant_step:
             out = multiply_int16(out, quant_step, self.quant_cfg.feature_scale)
         return concat_int16(out, to_cat, cat_at_front=cat_at_front)

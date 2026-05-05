@@ -213,6 +213,7 @@ def conv2d_int16(
     activation_scale_c=None,
     scale_c=None,
     residual=None,
+    residual2=None,
     post_scale=None,
 ):
     ext = load_int16_ext()
@@ -258,15 +259,16 @@ def conv2d_int16(
             weight.reshape(weight.shape[0], weight.shape[1]).contiguous(),
             bias,
             residual.contiguous() if residual is not None else None,
+            residual2.contiguous() if residual2 is not None else None,
             post_scale.contiguous() if post_scale is not None else None,
             int(k2_layer),
         )
-    return ext.conv2d_int16(input_tensor, weight, bias, residual, post_scale, stride, padding, groups)
+    return ext.conv2d_int16(input_tensor, weight, bias, residual, residual2, post_scale, stride, padding, groups)
 
 
-def conv1x1_int16_gemm(input_tensor, weight_2d, bias, residual=None, post_scale=None, k2_layer=8192):
+def conv1x1_int16_gemm(input_tensor, weight_2d, bias, residual=None, residual2=None, post_scale=None, k2_layer=8192):
     ext = load_int16_ext()
-    return ext.conv1x1_int16_gemm(input_tensor, weight_2d, bias, residual, post_scale, int(k2_layer))
+    return ext.conv1x1_int16_gemm(input_tensor, weight_2d, bias, residual, residual2, post_scale, int(k2_layer))
 
 
 def conv1x1_int8tc_gemm(
@@ -360,3 +362,18 @@ def wsilu_chunk_add_int16(input_tensor, lut):
 def add_int16(a, b):
     ext = load_int16_ext()
     return ext.add_int16(a, b)
+
+
+def conv1x1_int16_gemm_wsilu_chunk(input_tensor, weight_2d, bias, lut, k2_layer=8192):
+    """Fused 1x1 conv + WSiLU chunk-add.
+
+    Input:  [B, C_in, H, W]
+    Weight: [2*half_C, C_in]  (row-major)
+    Bias:   [2*half_C] or empty
+    LUT:    WSiLU lookup table (65536 entries, int16)
+    Output: [B, half_C, H, W]
+    """
+    ext = load_int16_ext()
+    return ext.conv1x1_int16_gemm_wsilu_chunk(
+        input_tensor, weight_2d, bias, lut, int(k2_layer)
+    )

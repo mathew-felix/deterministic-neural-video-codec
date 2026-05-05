@@ -4,6 +4,7 @@ torch::Tensor conv2d_int16(torch::Tensor input,
                            torch::Tensor weight,
                            c10::optional<torch::Tensor> bias_opt,
                            c10::optional<torch::Tensor> residual_opt,
+                           c10::optional<torch::Tensor> residual2_opt,
                            c10::optional<torch::Tensor> post_scale_opt,
                            int64_t stride,
                            int64_t padding,
@@ -15,6 +16,7 @@ torch::Tensor conv1x1_int16_gemm(torch::Tensor input,
                                  torch::Tensor weight,
                                  c10::optional<torch::Tensor> bias_opt,
                                  c10::optional<torch::Tensor> residual_opt,
+                                 c10::optional<torch::Tensor> residual2_opt,
                                  c10::optional<torch::Tensor> post_scale_opt,
                                  int64_t k2_layer);
 torch::Tensor conv1x1_int8tc_gemm(torch::Tensor input,
@@ -46,6 +48,11 @@ torch::Tensor add_multiply_int16(torch::Tensor a,
                                  torch::Tensor b,
                                  torch::Tensor scale,
                                  int64_t k1);
+torch::Tensor conv1x1_int16_gemm_wsilu_chunk(torch::Tensor input,
+                                             torch::Tensor weight,
+                                             c10::optional<torch::Tensor> bias_opt,
+                                             torch::Tensor lut,
+                                             int64_t k2_layer);
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("conv2d_int16", &conv2d_int16, "int16 conv2d with int64 accumulator");
@@ -73,4 +80,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("scale_index_lut_int16", &scale_index_lut_int16, "int16 scale-index LUT lookup");
     m.def("clamp_reciprocal_int16", &clamp_reciprocal_int16, "int16 reciprocal lookup");
     m.def("add_multiply_int16", &add_multiply_int16, "int16 fused add+multiply");
+    m.def(
+        "conv1x1_int16_gemm_wsilu_chunk",
+        &conv1x1_int16_gemm_wsilu_chunk,
+        "fused 1x1 int16 conv + wsilu chunk-add");
 }

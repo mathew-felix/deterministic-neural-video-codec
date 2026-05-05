@@ -102,6 +102,7 @@ __global__ void conv1x1_int16_kernel(const int16_t* __restrict__ input,
                                      const int16_t* __restrict__ weight,
                                      const int32_t* __restrict__ bias,
                                      const int16_t* __restrict__ residual,
+                                     const int16_t* __restrict__ residual2,
                                      const int16_t* __restrict__ post_scale,
                                      int16_t* __restrict__ output,
                                      int32_t batch,
@@ -155,6 +156,9 @@ __global__ void conv1x1_int16_kernel(const int16_t* __restrict__ input,
     if (residual != nullptr) {
         requantized += static_cast<int64_t>(residual[linear_idx]);
     }
+    if (residual2 != nullptr) {
+        requantized += static_cast<int64_t>(residual2[linear_idx]);
+    }
     output[linear_idx] = static_cast<int16_t>(apply_post_scale_device(
         requantized, post_scale, post_scale_numel, oc));
 }
@@ -167,6 +171,7 @@ __global__ void conv1x1_int16_blocked_kernel(const int16_t* __restrict__ input,
                                              const int16_t* __restrict__ weight,
                                              const int32_t* __restrict__ bias,
                                              const int16_t* __restrict__ residual,
+                                             const int16_t* __restrict__ residual2,
                                              const int16_t* __restrict__ post_scale,
                                              int16_t* __restrict__ output,
                                              int32_t batch,
@@ -312,6 +317,9 @@ __global__ void conv1x1_int16_blocked_kernel(const int16_t* __restrict__ input,
                 
                 if (residual != nullptr) {
                     val += static_cast<int64_t>(residual[output_idx]);
+                }
+                if (residual2 != nullptr) {
+                    val += static_cast<int64_t>(residual2[output_idx]);
                 }
                 output[output_idx] = static_cast<int16_t>(apply_post_scale_device(
                     val, post_scale, post_scale_numel, out_c));
@@ -759,16 +767,142 @@ int64_t num_blocks_for(int64_t total, int threads_per_block = 256) {
     return (total + threads_per_block - 1) / threads_per_block;
 }
 
+// ---- Fused conv1x1 + WSiLU-chunk-add kernel ----
+__global__ void conv1x1_int16_blocked_wsilu_chunk_kernel(
+        const int16_t* __restrict__ input,
+        const int16_t* __restrict__ weight,
+        const int32_t* __restrict__ bias,
+        const int16_t* __restrict__ lut,
+        int16_t* __restrict__ output,
+        int32_t batch,
+        int32_t in_channels,
+        int32_t height,
+        int32_t width,
+        int32_t half_channels,
+        int32_t k2_layer,
+        bool has_bias) {
+    const int32_t M = batch * height * width;
+    const int32_t K = in_channels;
+    const int32_t out_N = half_channels;
+    const int32_t full_N = half_channels * 2;
+
+    constexpr int BM = 64;
+    constexpr int BN = 64;
+    constexpr int BK = 16;
+    constexpr int TM = 4;
+    constexpr int TN = 4;
+
+    const int tx = threadIdx.x % 16;
+    const int ty = threadIdx.x / 16;
+    const int bx = blockIdx.x;
+    const int by = blockIdx.y;
+    const int row = by * BM + ty * TM;
+    const int col = bx * BN + tx * TN;
+
+    __shared__ int16_t As[BM * BK];
+    __shared__ int16_t Bs0[BK * BN];
+    __shared__ int16_t Bs1[BK * BN];
+
+    int32_t acc_lo[TM][TN] = {0};
+    int32_t acc_hi[TM][TN] = {0};
+
+    for (int k_idx = 0; k_idx < K; k_idx += BK) {
+        int a_row = by * BM + (threadIdx.x / 4);
+        int a_col = k_idx + (threadIdx.x % 4) * 4;
+        if (a_row < M && a_col < K) {
+            int m_n = a_row / (height * width);
+            int m_rem = a_row % (height * width);
+            for (int i = 0; i < 4; i++) {
+                if (a_col + i < K) {
+                    int64_t input_idx = (((int64_t)m_n * K) + (a_col + i)) * height * width + m_rem;
+                    As[(threadIdx.x / 4) * BK + (threadIdx.x % 4) * 4 + i] = input[input_idx];
+                } else {
+                    As[(threadIdx.x / 4) * BK + (threadIdx.x % 4) * 4 + i] = 0;
+                }
+            }
+        } else {
+            for (int i = 0; i < 4; i++)
+                As[(threadIdx.x / 4) * BK + (threadIdx.x % 4) * 4 + i] = 0;
+        }
+
+        int bs_row = threadIdx.x / 16;
+        int bs_col = (threadIdx.x % 16) * 4;
+        int b_oc_lo = bx * BN + bs_col;
+        int b_oc_hi = b_oc_lo + half_channels;
+        int b_k = k_idx + bs_row;
+        for (int i = 0; i < 4; i++) {
+            Bs0[bs_row * BN + bs_col + i] =
+                ((b_oc_lo + i) < out_N && b_k < K) ? weight[(b_oc_lo + i) * K + b_k] : 0;
+            Bs1[bs_row * BN + bs_col + i] =
+                ((b_oc_hi + i) < full_N && b_k < K) ? weight[(b_oc_hi + i) * K + b_k] : 0;
+        }
+
+        __syncthreads();
+
+        #pragma unroll
+        for (int k = 0; k < BK; ++k) {
+            int16_t a_frag[TM], b0[TN], b1[TN];
+            #pragma unroll
+            for (int i = 0; i < TM; ++i) a_frag[i] = As[(ty * TM + i) * BK + k];
+            #pragma unroll
+            for (int j = 0; j < TN; ++j) b0[j] = Bs0[k * BN + (tx * TN + j)];
+            #pragma unroll
+            for (int j = 0; j < TN; ++j) b1[j] = Bs1[k * BN + (tx * TN + j)];
+            #pragma unroll
+            for (int i = 0; i < TM; ++i) {
+                #pragma unroll
+                for (int j = 0; j < TN; ++j) {
+                    acc_lo[i][j] += (int32_t)a_frag[i] * (int32_t)b0[j];
+                    acc_hi[i][j] += (int32_t)a_frag[i] * (int32_t)b1[j];
+                }
+            }
+        }
+        __syncthreads();
+    }
+
+    const int64_t offset = k2_layer / 2;
+    #pragma unroll
+    for (int i = 0; i < TM; ++i) {
+        #pragma unroll
+        for (int j = 0; j < TN; ++j) {
+            int out_r = row + i;
+            int out_c = col + j;
+            if (out_r < M && out_c < out_N) {
+                int64_t vlo = acc_lo[i][j];
+                if (has_bias) vlo += bias[out_c];
+                vlo = (vlo >= 0) ? (vlo + offset) / k2_layer : -(((-vlo) + offset) / k2_layer);
+                vlo = clamp_int16_device(vlo);
+
+                int64_t vhi = acc_hi[i][j];
+                if (has_bias) vhi += bias[out_c + half_channels];
+                vhi = (vhi >= 0) ? (vhi + offset) / k2_layer : -(((-vhi) + offset) / k2_layer);
+                vhi = clamp_int16_device(vhi);
+
+                int64_t result = static_cast<int64_t>(lut[static_cast<int32_t>(vlo) - kInt16Min])
+                               + static_cast<int64_t>(lut[static_cast<int32_t>(vhi) - kInt16Min]);
+                result = clamp_int16_device(result);
+
+                int m_n = out_r / (height * width);
+                int m_rem = out_r % (height * width);
+                int64_t oidx = (((int64_t)m_n * out_N) + out_c) * height * width + m_rem;
+                output[oidx] = static_cast<int16_t>(result);
+            }
+        }
+    }
+}
+
 }  // namespace
 
 at::Tensor conv1x1_int16_gemm(at::Tensor input,
                               at::Tensor weight,
                               c10::optional<at::Tensor> bias_opt,
                               c10::optional<at::Tensor> residual_opt,
+                              c10::optional<at::Tensor> residual2_opt,
                               c10::optional<at::Tensor> post_scale_opt,
                               int64_t k2_layer) {
     at::Tensor bias; if(bias_opt.has_value()) bias = bias_opt.value();
     at::Tensor residual; if(residual_opt.has_value()) residual = residual_opt.value();
+    at::Tensor residual2; if(residual2_opt.has_value()) residual2 = residual2_opt.value();
     at::Tensor post_scale; if(post_scale_opt.has_value()) post_scale = post_scale_opt.value();
 
     check_cuda_tensor(input, "input");
@@ -790,6 +924,12 @@ at::Tensor conv1x1_int16_gemm(at::Tensor input,
         check_cuda_tensor(residual, "residual");
         check_scalar_type(residual, at::kShort, "residual");
         residual = residual.contiguous();
+    }
+    const bool has_residual2 = residual2.defined() && residual2.numel() > 0;
+    if (has_residual2) {
+        check_cuda_tensor(residual2, "residual2");
+        check_scalar_type(residual2, at::kShort, "residual2");
+        residual2 = residual2.contiguous();
     }
     const bool has_post_scale = post_scale.defined() && post_scale.numel() > 0;
     if (has_post_scale) {
@@ -839,6 +979,7 @@ at::Tensor conv1x1_int16_gemm(at::Tensor input,
         weight.data_ptr<int16_t>(),
         has_bias ? bias.data_ptr<int32_t>() : nullptr,
         has_residual ? residual.data_ptr<int16_t>() : nullptr,
+        has_residual2 ? residual2.data_ptr<int16_t>() : nullptr,
         has_post_scale ? post_scale.data_ptr<int16_t>() : nullptr,
         output.data_ptr<int16_t>(),
         batch,
@@ -847,6 +988,82 @@ at::Tensor conv1x1_int16_gemm(at::Tensor input,
         width,
         out_channels,
         has_post_scale ? post_scale.numel() : 0,
+        static_cast<int32_t>(k2_layer),
+        has_bias);
+    C10_CUDA_KERNEL_LAUNCH_CHECK();
+    return output;
+}
+
+
+// Host launcher for fused conv1x1 + WSiLU-chunk-add.
+at::Tensor conv1x1_int16_gemm_wsilu_chunk(at::Tensor input,
+                                          at::Tensor weight,
+                                          c10::optional<at::Tensor> bias_opt,
+                                          at::Tensor lut,
+                                          int64_t k2_layer) {
+    at::Tensor bias; if(bias_opt.has_value()) bias = bias_opt.value();
+
+    check_cuda_tensor(input, "input");
+    check_cuda_tensor(weight, "weight");
+    check_cuda_tensor(lut, "lut");
+    check_scalar_type(input, at::kShort, "input");
+    check_scalar_type(weight, at::kShort, "weight");
+    check_scalar_type(lut, at::kShort, "lut");
+
+    if (bias.defined() && bias.numel() > 0) {
+        check_cuda_tensor(bias, "bias");
+        check_scalar_type(bias, at::kInt, "bias");
+    }
+
+    input = input.contiguous();
+    weight = weight.contiguous();
+    lut = lut.contiguous();
+    bias = bias.defined() ? bias.contiguous() : bias;
+
+    TORCH_CHECK(input.dim() == 4, "input must have 4 dimensions");
+    TORCH_CHECK(weight.dim() == 2, "weight must have 2 dimensions");
+    TORCH_CHECK(k2_layer >= 1, "k2_layer must be >= 1");
+
+    const auto batch = static_cast<int32_t>(input.size(0));
+    const auto in_channels = static_cast<int32_t>(input.size(1));
+    const auto height = static_cast<int32_t>(input.size(2));
+    const auto width = static_cast<int32_t>(input.size(3));
+    const auto full_out_channels = static_cast<int32_t>(weight.size(0));
+    TORCH_CHECK(full_out_channels % 2 == 0,
+                "weight out_channels must be even for wsilu_chunk_add fusion");
+    const auto half_channels = full_out_channels / 2;
+    TORCH_CHECK(weight.size(1) == in_channels, "weight input channels mismatch");
+    if (bias.defined() && bias.numel() > 0) {
+        TORCH_CHECK(bias.numel() == full_out_channels,
+                    "bias must have one value per output channel (2*half_C)");
+    }
+
+    auto output = at::empty({batch, half_channels, height, width},
+                            at::TensorOptions().device(input.device()).dtype(at::kShort));
+
+    const c10::cuda::CUDAGuard guard(input.device());
+    const auto stream = at::cuda::getCurrentCUDAStream();
+    const bool has_bias = bias.defined() && bias.numel() > 0;
+    const dim3 threads_per_block(256);
+    const int32_t M = batch * height * width;
+
+    const dim3 blocks(
+        static_cast<uint32_t>((half_channels + 63) / 64),
+        static_cast<uint32_t>((M + 63) / 64),
+        1);
+
+    conv1x1_int16_blocked_wsilu_chunk_kernel<<<blocks, threads_per_block, 0,
+                                               stream.stream()>>>(
+        input.data_ptr<int16_t>(),
+        weight.data_ptr<int16_t>(),
+        has_bias ? bias.data_ptr<int32_t>() : nullptr,
+        lut.data_ptr<int16_t>(),
+        output.data_ptr<int16_t>(),
+        batch,
+        in_channels,
+        height,
+        width,
+        half_channels,
         static_cast<int32_t>(k2_layer),
         has_bias);
     C10_CUDA_KERNEL_LAUNCH_CHECK();
@@ -1265,12 +1482,14 @@ at::Tensor conv2d_int16(at::Tensor input,
                         at::Tensor weight,
                         c10::optional<at::Tensor> bias_opt,
                         c10::optional<at::Tensor> residual_opt,
+                        c10::optional<at::Tensor> residual2_opt,
                         c10::optional<at::Tensor> post_scale_opt,
                         int64_t stride,
                         int64_t padding,
                         int64_t groups) {
     at::Tensor bias; if(bias_opt.has_value()) bias = bias_opt.value();
     at::Tensor residual; if(residual_opt.has_value()) residual = residual_opt.value();
+    at::Tensor residual2; if(residual2_opt.has_value()) residual2 = residual2_opt.value();
     at::Tensor post_scale; if(post_scale_opt.has_value()) post_scale = post_scale_opt.value();
     check_cuda_tensor(input, "input");
     check_cuda_tensor(weight, "weight");
@@ -1291,6 +1510,12 @@ at::Tensor conv2d_int16(at::Tensor input,
         check_cuda_tensor(residual, "residual");
         check_scalar_type(residual, at::kShort, "residual");
         residual = residual.contiguous();
+    }
+    const bool has_residual2 = residual2.defined() && residual2.numel() > 0;
+    if (has_residual2) {
+        check_cuda_tensor(residual2, "residual2");
+        check_scalar_type(residual2, at::kShort, "residual2");
+        residual2 = residual2.contiguous();
     }
     const bool has_post_scale = post_scale.defined() && post_scale.numel() > 0;
     if (has_post_scale) {
@@ -1342,6 +1567,7 @@ at::Tensor conv2d_int16(at::Tensor input,
             weight.view({out_channels, channels_per_group}),
             bias,
             residual,
+            residual2,
             post_scale,
             kWeightScale);
     } else if (kernel_h == 1 && kernel_w == 1) {
@@ -1354,6 +1580,7 @@ at::Tensor conv2d_int16(at::Tensor input,
             weight.data_ptr<int16_t>(),
             has_bias ? bias.data_ptr<int32_t>() : nullptr,
             has_residual ? residual.data_ptr<int16_t>() : nullptr,
+            has_residual2 ? residual2.data_ptr<int16_t>() : nullptr,
             has_post_scale ? post_scale.data_ptr<int16_t>() : nullptr,
             output.data_ptr<int16_t>(),
             batch,

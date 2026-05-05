@@ -8,6 +8,7 @@ from torch import nn
 
 from ..layers.int16_backend import (
     Int16QuantConfig,
+    _forward_with_quant_fuse,
     add_and_multiply_int16,
     add_int16,
     build_int16_runner,
@@ -770,8 +771,9 @@ class EncoderInt16Runner:
         feature = pixel_unshuffle_int16(x, 8)
         feature = self.conv1.forward(feature)
         feature = self.conv2.forward(concat_int16(feature, ctx, cat_at_front=False))
-        feature = self.conv3.forward(feature)
-        feature = multiply_int16(feature, quant_step, self.quant_cfg.feature_scale)
+        feature = _forward_with_quant_fuse(
+            self.conv3, feature, quant_step, self.quant_cfg
+        )
         return self.down.forward(feature)
 
     def to(self, device):
@@ -825,8 +827,9 @@ class DecoderInt16Runner:
     def forward(self, x, ctx, quant_step):
         feature = self.up.forward(x)
         feature = self.conv1.forward(concat_int16(feature, ctx, cat_at_front=False))
-        feature = self.conv2.forward(feature)
-        return multiply_int16(feature, quant_step, self.quant_cfg.feature_scale)
+        return _forward_with_quant_fuse(
+            self.conv2, feature, quant_step, self.quant_cfg
+        )
 
     def to(self, device):
         self.wsilu_lut = self.wsilu_lut.to(device=device, dtype=torch.int16)
@@ -868,8 +871,9 @@ class ReconGenerationInt16Runner:
         )
 
     def forward(self, x, quant_step):
-        out = self.conv.forward(x)
-        out = multiply_int16(out, quant_step, self.quant_cfg.feature_scale)
+        out = _forward_with_quant_fuse(
+            self.conv, x, quant_step, self.quant_cfg
+        )
         out = self.head.forward(out)
         out = pixel_shuffle_int16(out, 8)
         return clamp_feature_int16(out, min_value=0.0, max_value=1.0, quant_cfg=self.quant_cfg)

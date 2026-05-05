@@ -1839,13 +1839,12 @@ class DMCInt16Reference:
         return tuple(resolved)
 
     def is_async_entropy_prep_active(self, encode_only=False):
-        return (
-            encode_only
-            and self.device.type == "cuda"
-            and _int16_async_entropy_prep_enabled()
-            and (not self._cuda_graph_enabled)
-        )
+        # [REVERTED] Plan 13.1 async entropy prep was a net negative for wall-clock time
+        # due to pinned memory copy overhead. Returning False unconditionally.
+        return False
 
+    # Reference-only Plan 13.1 experiment. Keep this available for future Nsight
+    # investigations, but gate it off through is_async_entropy_prep_active().
     def _build_packed_streams_2x_async(self, entropy, y_q_parts, scale_parts):
         if self._entropy_prep_stream is None:
             self._entropy_prep_stream = torch.cuda.Stream(device=self.device)

@@ -1,0 +1,53 @@
+{
+  "artifact_type": "example_calibration_manifest",
+  "replace_paths_with_local_media": true,
+  "version": "5.0",
+  "description": "Calibration manifest for INT16 bundle v5. Covers 6 content types for weighted 99.9th-percentile activation statistics aggregation.",
+  "percentile": 99.9,
+  "qp": 32,
+  "frames_per_clip": 300,
+  "clips": [
+    {
+      "name": "daylight_outdoor",
+      "content_type": "outdoor_daylight",
+      "path": "clips/daylight_outdoor_1280x720_30fps.mp4",
+      "weight": 1.5,
+      "description": "High dynamic range, strong spatial gradients, typical surveillance/dashcam"
+    },
+    {
+      "name": "indoor_studio",
+      "content_type": "indoor_studio",
+      "path": "clips/indoor_studio_1280x720_30fps.mp4",
+      "weight": 1.0,
+      "description": "Low noise, predictable activations, controlled lighting"
+    },
+    {
+      "name": "sports_motion",
+      "content_type": "sports_fast_motion",
+      "path": "clips/sports_fast_motion_1280x720_30fps.mp4",
+      "weight": 1.2,
+      "description": "Large inter-frame differences, high entropy, fast motion vectors"
+    },
+    {
+      "name": "night_dark",
+      "content_type": "night_low_light",
+      "path": "clips/night_dark_scene_1280x720_30fps.mp4",
+      "weight": 0.8,
+      "description": "Low-light, outlier activation tails — known to fail strict PSNR gates"
+    },
+    {
+      "name": "talking_head",
+      "content_type": "talking_head_screen",
+      "path": "clips/talking_head_1280x720_30fps.mp4",
+      "weight": 1.0,
+      "description": "Uniform regions, low inter-frame entropy, typical video conferencing"
+    },
+    {
+      "name": "animation",
+      "content_type": "animation_synthetic",
+      "path": "clips/animation_1280x720_30fps.mp4",
+      "weight": 0.7,
+      "description": "Saturated colors, sharp edges, no film grain, synthetic content"
+    }
+  ]
+}

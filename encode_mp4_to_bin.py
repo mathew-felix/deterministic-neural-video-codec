@@ -293,6 +293,13 @@ def configure_runtime_flags(args):
 
 def build_preflight_report(args, input_mp4, bundle_path, output_dir, video_info, frame_count):
     requested_flags = configure_runtime_flags(args)
+    effective_flags = {
+        "encode_only": bool(requested_flags["encode_only"]),
+        "enable_pframe_graphs": bool(requested_flags["enable_pframe_graphs"]),
+        "profile_pframe_stages": bool(requested_flags["profile_pframe_stages"]),
+        "async_entropy_prep": False,
+        "log_frame_stats": bool(requested_flags["log_frame_stats"]),
+    }
     device = torch.device(args.device)
     profile_path = (
         resolve_output_path(args.profile_output_json, output_dir)
@@ -320,6 +327,7 @@ def build_preflight_report(args, input_mp4, bundle_path, output_dir, video_info,
         "reset_interval": int(args.reset_interval),
         "device": str(device),
         "requested_flags": requested_flags,
+        "effective_flags": effective_flags,
         "equivalence_class": build_equivalence_class(
             __file__,
             args,
@@ -331,8 +339,11 @@ def build_preflight_report(args, input_mp4, bundle_path, output_dir, video_info,
             frame_count,
             0,
             requested_flags,
-            requested_flags,
-            ["Preflight only; no bitstream was produced."],
+            effective_flags,
+            [
+                "Preflight only; no bitstream was produced.",
+                "Async entropy prep is reverted and currently inactive.",
+            ],
         ),
     }
 
@@ -547,8 +558,8 @@ def encode_video(args):
         and not async_entropy_prep_enabled
     ):
         equivalence_notes.append(
-            "Async entropy prep is inactive unless encode-only mode runs on CUDA with "
-            "P-frame graphs disabled."
+            "Async entropy prep is reverted and currently inactive; the implementation "
+            "is retained only as reference code."
         )
 
     encode_t0 = time.perf_counter()

@@ -10,3 +10,4 @@ pillow==10.4.0
 setuptools==72.1.0
 wheel==0.44.0
 packaging==24.1
+pytest==8.3.4

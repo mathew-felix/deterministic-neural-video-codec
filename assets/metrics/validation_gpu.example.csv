@@ -1,0 +1,3 @@
+artifact_type,device,resolution,fps,frames,qp_i,qp_p,avg_pframe_ms,avg_iframe_ms,total_bits,bpp,psnr_db,bitstream_sha256,notes
+example_validation_gpu,x86_rtx,1280x720,30,1390,32,32,197.0,353.0,16364584,0.020039,37.31,0000000000000000000000000000000000000000000000000000000000000000,replace_digest_with_real_run
+example_validation_gpu,jetson_orin_nano,1280x720,30,1390,32,32,2134.768,3044.333,16364584,0.020039,37.31,0000000000000000000000000000000000000000000000000000000000000000,replace_digest_with_real_run

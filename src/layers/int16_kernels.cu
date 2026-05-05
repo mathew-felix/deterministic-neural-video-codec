@@ -15,7 +15,6 @@ constexpr int32_t kWeightScale = 8192;
 constexpr int32_t kWeightShift = 13;
 constexpr int32_t kTileW = 16;
 constexpr int32_t kTileH = 16;
-constexpr int32_t kBlockC = 8;
 constexpr int32_t kConv1x1TilePos = 16;
 constexpr int32_t kConv1x1TileOc = 8;
 constexpr int32_t kInt8Limit = 127;
@@ -561,6 +560,7 @@ __global__ void depthwise_conv3x3_lut_fused_int16_kernel(
         acc, kWeightShift)));
 }
 
+template <int32_t BLOCK_C>
 __global__ void conv2d_int16_tiled_kernel(const int16_t* __restrict__ input,
                                           const int16_t* __restrict__ weight,
                                           const int32_t* __restrict__ bias,
@@ -607,8 +607,8 @@ __global__ void conv2d_int16_tiled_kernel(const int16_t* __restrict__ input,
     int64_t acc = has_bias ? static_cast<int64_t>(bias[oc]) : 0;
 
     const int32_t tile_area = tile_input_h * tile_input_w;
-    for (int32_t icg_base = 0; icg_base < channels_per_group; icg_base += kBlockC) {
-        const int32_t ic_count = min(kBlockC, channels_per_group - icg_base);
+    for (int32_t icg_base = 0; icg_base < channels_per_group; icg_base += BLOCK_C) {
+        const int32_t ic_count = min(BLOCK_C, channels_per_group - icg_base);
         const int32_t block_elems = ic_count * tile_area;
         for (int32_t idx = thread_linear; idx < block_elems; idx += threads_per_block) {
             const int32_t icg_off = idx / tile_area;
@@ -1627,33 +1627,48 @@ at::Tensor conv2d_int16(at::Tensor input,
             static_cast<uint32_t>((out_w + kTileW - 1) / kTileW),
             static_cast<uint32_t>((out_h + kTileH - 1) / kTileH),
             static_cast<uint32_t>(batch * out_channels));
-        const size_t shared_bytes =
-            static_cast<size_t>(kBlockC) *
-            static_cast<size_t>(kTileH * stride_i + kernel_h - 1) *
-            static_cast<size_t>(kTileW * stride_i + kernel_w - 1) *
-            sizeof(int16_t);
-        conv2d_int16_tiled_kernel<<<blocks, threads_per_block, shared_bytes,
-                                    stream.stream()>>>(
-            input.data_ptr<int16_t>(),
-            weight.data_ptr<int16_t>(),
-            has_bias ? bias.data_ptr<int32_t>() : nullptr,
-            has_post_scale ? post_scale.data_ptr<int16_t>() : nullptr,
-            output.data_ptr<int16_t>(),
-            batch,
-            in_channels,
-            height,
-            width,
-            out_channels,
-            channels_per_group,
-            kernel_h,
-            kernel_w,
-            stride_i,
-            padding_i,
-            groups_i,
-            out_h,
-            out_w,
-            has_post_scale ? post_scale.numel() : 0,
-            has_bias);
+
+#define LAUNCH_TILED(BLOCK_C) \
+        do { \
+            const size_t shared_bytes = \
+                static_cast<size_t>(BLOCK_C) * \
+                static_cast<size_t>(kTileH * stride_i + kernel_h - 1) * \
+                static_cast<size_t>(kTileW * stride_i + kernel_w - 1) * \
+                sizeof(int16_t); \
+            conv2d_int16_tiled_kernel<BLOCK_C><<<blocks, threads_per_block, shared_bytes, \
+                                        stream.stream()>>>( \
+                input.data_ptr<int16_t>(), \
+                weight.data_ptr<int16_t>(), \
+                has_bias ? bias.data_ptr<int32_t>() : nullptr, \
+                has_post_scale ? post_scale.data_ptr<int16_t>() : nullptr, \
+                output.data_ptr<int16_t>(), \
+                batch, \
+                in_channels, \
+                height, \
+                width, \
+                out_channels, \
+                channels_per_group, \
+                kernel_h, \
+                kernel_w, \
+                stride_i, \
+                padding_i, \
+                groups_i, \
+                out_h, \
+                out_w, \
+                has_post_scale ? post_scale.numel() : 0, \
+                has_bias); \
+        } while (0)
+
+        if (channels_per_group == 48 || channels_per_group == 96) {
+            LAUNCH_TILED(6);
+        } else if (channels_per_group == 64) {
+            LAUNCH_TILED(4);
+        } else if (channels_per_group % 8 == 0) {
+            LAUNCH_TILED(8);
+        } else {
+            LAUNCH_TILED(4);
+        }
+#undef LAUNCH_TILED
     }
     C10_CUDA_KERNEL_LAUNCH_CHECK();
     return output;

@@ -4,15 +4,18 @@ torch::Tensor conv2d_int16(torch::Tensor input,
                            torch::Tensor weight,
                            c10::optional<torch::Tensor> bias_opt,
                            c10::optional<torch::Tensor> residual_opt,
+                           c10::optional<torch::Tensor> post_scale_opt,
                            int64_t stride,
                            int64_t padding,
                            int64_t groups);
 torch::Tensor wsilu_chunk_add_int16(torch::Tensor input, torch::Tensor lut);
 torch::Tensor add_int16(torch::Tensor a, torch::Tensor b);
+torch::Tensor multiply_int16(torch::Tensor input, torch::Tensor scale, int64_t k1);
 torch::Tensor conv1x1_int16_gemm(torch::Tensor input,
                                  torch::Tensor weight,
                                  c10::optional<torch::Tensor> bias_opt,
                                  c10::optional<torch::Tensor> residual_opt,
+                                 c10::optional<torch::Tensor> post_scale_opt,
                                  int64_t k2_layer);
 torch::Tensor conv1x1_int8tc_gemm(torch::Tensor input,
                                   torch::Tensor weight,
@@ -48,6 +51,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("conv2d_int16", &conv2d_int16, "int16 conv2d with int64 accumulator");
     m.def("wsilu_chunk_add_int16", &wsilu_chunk_add_int16, "fused wsilu + chunk + add int16");
     m.def("add_int16", &add_int16, "native add int16");
+    m.def("multiply_int16", &multiply_int16, "broadcast int16 multiply");
     m.def("conv1x1_int16_gemm", &conv1x1_int16_gemm, "optimized 1x1 int16 conv");
     m.def(
         "conv1x1_int8tc_gemm",

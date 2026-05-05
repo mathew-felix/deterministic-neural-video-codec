@@ -63,6 +63,35 @@ class Int16BackendSmokeTest(unittest.TestCase):
 
         self.assertTrue(torch.equal(actual, expected))
 
+    def test_conv2d_reference_fuses_post_scale_after_residual(self):
+        import torch
+
+        from src.layers.int16_backend import Conv2dInt16Params, conv2d_int16_reference
+
+        input_i16 = torch.tensor([[[[100, -100]], [[50, -50]]]], dtype=torch.int16)
+        weight = torch.tensor([[[[1]], [[1]]], [[[2]], [[0]]]], dtype=torch.int16)
+        bias = torch.tensor([0, 0], dtype=torch.int32)
+        residual = torch.tensor([[[[10, -10]], [[0, 0]]]], dtype=torch.int16)
+        post_scale = torch.tensor([256, 1024], dtype=torch.int16)
+        params = Conv2dInt16Params(
+            weight=weight,
+            bias=bias,
+            k2_layer=1,
+            stride=1,
+            padding=0,
+            groups=1,
+        )
+
+        actual = conv2d_int16_reference(
+            input_i16,
+            params,
+            residual=residual,
+            post_scale=post_scale,
+        )
+        expected = torch.tensor([[[[80, -80]], [[400, -400]]]], dtype=torch.int16)
+
+        self.assertTrue(torch.equal(actual, expected))
+
     def test_conv2d_residual_shape_must_match_output_shape(self):
         import torch
 

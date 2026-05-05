@@ -16,6 +16,7 @@ try:
         conv2d_int16 as _cuda_conv2d_int16,
         depthwise_conv3x3_lut_fused_int16 as _cuda_depthwise_conv3x3_lut_fused_int16,
         lut_lookup_int16 as _cuda_lut_lookup_int16,
+        multiply_int16 as _cuda_multiply_int16,
         scale_index_lut_int16 as _cuda_scale_index_lut_int16,
         wsilu_chunk_add_int16 as _cuda_wsilu_chunk_add_int16,
         add_int16 as _cuda_add_int16,
@@ -722,7 +723,7 @@ def _validate_conv_residual_shape(residual, output_shape):
         )
 
 
-def conv2d_int16_reference(input_i16, params, quant_cfg=None, residual=None):
+def conv2d_int16_reference(input_i16, params, quant_cfg=None, residual=None, post_scale=None):
     quant_cfg = quant_cfg or Int16QuantConfig()
     _validate_conv_residual_shape(residual, _conv2d_output_shape(input_i16, params))
     x = input_i16.to(torch.int32)
@@ -748,10 +749,13 @@ def conv2d_int16_reference(input_i16, params, quant_cfg=None, residual=None):
     out = round_divide_by_scalar(acc.to(torch.int64), int(params.k2_layer))
     if residual is not None:
         out = clamp_int16(out + residual.to(torch.int32))
+    if post_scale is not None:
+        post_scale = post_scale.to(device=out.device, dtype=torch.int16).reshape(1, -1, 1, 1)
+        out = multiply_int16(out.to(torch.int16), post_scale, quant_cfg.feature_scale)
     return out
 
 
-def conv2d_int16(input_i16, params, quant_cfg=None, residual=None):
+def conv2d_int16(input_i16, params, quant_cfg=None, residual=None, post_scale=None):
     quant_cfg = quant_cfg or Int16QuantConfig()
     _validate_conv_residual_shape(residual, _conv2d_output_shape(input_i16, params))
     if params.activation_observer is not None and is_int8_kernel_candidate(params):
@@ -767,7 +771,7 @@ def conv2d_int16(input_i16, params, quant_cfg=None, residual=None):
         runtime_scale_c = None
         activation_scale_c = None
         activation_scale = params.activation_int8_scale
-        if params.use_int8 and params.weight_int8 is not None:
+        if params.use_int8 and params.weight_int8 is not None and post_scale is None:
             weight_i8 = params.weight_int8.to(
                 device=input_i16.device, dtype=torch.int8, non_blocking=True
             )
@@ -812,8 +816,13 @@ def conv2d_int16(input_i16, params, quant_cfg=None, residual=None):
             None if activation_scale_c is None else activation_scale_c.contiguous(),
             None if runtime_scale_c is None else runtime_scale_c.contiguous(),
             residual=residual.contiguous() if residual is not None else None,
+            post_scale=None if post_scale is None else post_scale.to(
+                device=input_i16.device,
+                dtype=torch.int16,
+                non_blocking=True,
+            ).reshape(-1).contiguous(),
         )
-    return conv2d_int16_reference(input_i16, params, quant_cfg, residual=residual)
+    return conv2d_int16_reference(input_i16, params, quant_cfg, residual=residual, post_scale=post_scale)
 
 
 def depthwise_conv3x3_lut_fused_int16(input_i16, params, lut, quant_cfg=None):
@@ -851,6 +860,17 @@ def add_int16(x, y):
 
 
 def multiply_int16(x, y, scale):
+    y_numel = y.numel() if torch.is_tensor(y) else 0
+    supports_cuda_broadcast = (
+        x.dim() == 4
+        and y_numel in (1, x.shape[1], x.numel())
+    )
+    if USE_CUDA_KERNELS and x.is_cuda and y.is_cuda and scale == 512 and supports_cuda_broadcast:
+        return _cuda_multiply_int16(
+            x.contiguous(),
+            y.to(device=x.device, dtype=torch.int16, non_blocking=True).reshape(-1).contiguous(),
+            scale,
+        )
     product = x.to(torch.int32) * y.to(torch.int32)
     return clamp_int16(round_shift_right(product, _shift_bits(scale)))
 
@@ -1205,11 +1225,18 @@ class DepthConvBlockInt16Runner:
         ffn_identity = out
         out = conv2d_int16(out, self.params.ffn_conv1, self.quant_cfg)
         out = wsilu_chunk_add_int16(out, self.wsilu_lut)
-        out = conv2d_int16(out, self.params.ffn_conv2, self.quant_cfg, residual=ffn_identity)
+        fuse_quant_step = quant_step is not None and not self.params.shortcut
+        out = conv2d_int16(
+            out,
+            self.params.ffn_conv2,
+            self.quant_cfg,
+            residual=ffn_identity,
+            post_scale=quant_step if fuse_quant_step else None,
+        )
 
         if self.params.shortcut:
             out = add_int16(out, identity)
-        if quant_step is not None:
+        if quant_step is not None and not fuse_quant_step:
             out = multiply_int16(out, quant_step, self.quant_cfg.feature_scale)
         return concat_int16(out, to_cat, cat_at_front=cat_at_front)
 

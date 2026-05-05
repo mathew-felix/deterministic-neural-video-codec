@@ -103,6 +103,39 @@ CUDA graph coverage for stable submodules, and residual fusion.
 These five stages consume ~76% of steady-state P-frame GPU time and are the
 primary targets for kernel fusion in Plan 13.2.
 
+## Plan 13.2 Pillar A Fusion Plan
+
+The first Plan 13.2 fusion slice extends the Commit 13 residual-fusion
+contract with an optional INT16 post-scale epilogue. Eligible convolution
+call sites now perform `conv -> requantize -> residual add -> clamp ->
+quant-step multiply -> clamp` inside the CUDA convolution kernel instead of
+launching a separate multiply kernel after the block. The Python reference path
+uses the same ordering for bitstream equivalence checks.
+
+| Stage | Pointwise work identified | Implemented fusion | Remaining candidates |
+| :---- | :------------------------ | :----------------- | :------------------- |
+| `reconstruct_frame_enc` | residual add, quant-step scale, clamp | DepthConvBlock final-conv post-scale epilogue when no shortcut is present; CUDA broadcast multiply for remaining quant-step scales | shortcut add plus post-scale in one epilogue once the shortcut tensor is available at the convolution call |
+| `decode_feature_enc` | residual add, quant-step scale, clamp, WSiLU chunk add | Same post-scale epilogue for feature-decoder depth blocks; existing WSiLU chunk-add remains fused | fold adjacent context/feature concatenation into following conv prologues |
+| `res_prior_param_decoder_enc` | residual add, quant-step scale, clamp | Same conv epilogue path for eligible residual depth blocks in prior-parameter decoding | specialize narrow-channel prior kernels and fuse reshape/cat boundaries where shapes are static |
+| `extract_context_enc` | feature scale, residual add, clamp | CUDA broadcast multiply covers per-channel and full-tensor scale shapes without a PyTorch pointwise launch | fuse context split/cat traffic into consumer conv prologues |
+| `encode_y` | quant-step scale, residual add, clamp | Encoder depth blocks use the same post-scale epilogue when the shortcut path is absent | fuse input/context concatenation and any pre-conv scale into staged shared-memory loads |
+
+Validation used a 32-frame Tier A proof with CUDA P-frame graphs enabled:
+
+```powershell
+python encode_mp4_to_bin.py --input_mp4 ..\test.mp4 --bundle_path ..\artifacts\int16_reference_bundle_v2_calibrated.pt --frames 32 --output_dir outputs\plan13_2_fusion_run_a --enable_pframe_graphs
+python encode_mp4_to_bin.py --input_mp4 ..\test.mp4 --bundle_path ..\artifacts\int16_reference_bundle_v2_calibrated.pt --frames 32 --output_dir outputs\plan13_2_fusion_run_b --enable_pframe_graphs
+python tools\compare_bitstreams.py outputs\plan13_2_fusion_run_a\test_1280x720_30_32f_q32.bin outputs\plan13_2_fusion_run_b\test_1280x720_30_32f_q32.bin --expect_equal
+```
+
+Both runs produced SHA-256
+`96f1c588584532640b78d914adad766aa38e02f5cfb80536c6467048e7d794fb`, and
+`compare_bitstreams.py --expect_equal` reported `sha256_equal: true`. The
+second local non-profile run measured 204.812 ms/frame on the RTX 3070 Ti
+Laptop environment. A profiling run in the same dirty worktree remained noisy
+and did not prove the full 20% five-stage target; the remaining candidates
+above are still the next Plan 13.2 work.
+
 ## Async Entropy Prep — Reverted
 
 Plan 13.1 attempted to overlap entropy preparation with GPU kernels using

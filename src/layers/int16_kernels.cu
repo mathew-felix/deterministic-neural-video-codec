@@ -85,10 +85,24 @@ __device__ inline int64_t round_divide_device(int64_t value, int32_t divisor) {
     return -(((-value) + offset) / divisor);
 }
 
+__device__ inline int64_t apply_post_scale_device(int64_t value,
+                                                  const int16_t* __restrict__ post_scale,
+                                                  int64_t post_scale_numel,
+                                                  int32_t oc) {
+    const int64_t clamped = clamp_int16_device(value);
+    if (post_scale == nullptr) {
+        return clamped;
+    }
+    const int64_t scale_idx = post_scale_numel == 1 ? 0 : static_cast<int64_t>(oc);
+    const int64_t product = clamped * static_cast<int64_t>(post_scale[scale_idx]);
+    return clamp_int16_device(round_shift_right_device(product, 9));
+}
+
 __global__ void conv1x1_int16_kernel(const int16_t* __restrict__ input,
                                      const int16_t* __restrict__ weight,
                                      const int32_t* __restrict__ bias,
                                      const int16_t* __restrict__ residual,
+                                     const int16_t* __restrict__ post_scale,
                                      int16_t* __restrict__ output,
                                      int32_t batch,
                                      int32_t in_channels,
@@ -101,6 +115,7 @@ __global__ void conv1x1_int16_kernel(const int16_t* __restrict__ input,
                                      int32_t groups,
                                      int32_t out_h,
                                      int32_t out_w,
+                                     int64_t post_scale_numel,
                                      int32_t k2_layer,
                                      bool has_bias) {
     const int64_t total = static_cast<int64_t>(batch) * out_channels * out_h * out_w;
@@ -140,7 +155,8 @@ __global__ void conv1x1_int16_kernel(const int16_t* __restrict__ input,
     if (residual != nullptr) {
         requantized += static_cast<int64_t>(residual[linear_idx]);
     }
-    output[linear_idx] = static_cast<int16_t>(clamp_int16_device(requantized));
+    output[linear_idx] = static_cast<int16_t>(apply_post_scale_device(
+        requantized, post_scale, post_scale_numel, oc));
 }
 
 // Vector loads for aligned int16_t arrays
@@ -151,12 +167,14 @@ __global__ void conv1x1_int16_blocked_kernel(const int16_t* __restrict__ input,
                                              const int16_t* __restrict__ weight,
                                              const int32_t* __restrict__ bias,
                                              const int16_t* __restrict__ residual,
+                                             const int16_t* __restrict__ post_scale,
                                              int16_t* __restrict__ output,
                                              int32_t batch,
                                              int32_t in_channels,
                                              int32_t height,
                                              int32_t width,
                                              int32_t out_channels,
+                                             int64_t post_scale_numel,
                                              int32_t k2_layer,
                                              bool has_bias) {
     const int32_t M = batch * height * width;
@@ -295,10 +313,8 @@ __global__ void conv1x1_int16_blocked_kernel(const int16_t* __restrict__ input,
                 if (residual != nullptr) {
                     val += static_cast<int64_t>(residual[output_idx]);
                 }
-                if (val < -32768) val = -32768;
-                else if (val > 32767) val = 32767;
-                
-                output[output_idx] = (int16_t)val;
+                output[output_idx] = static_cast<int16_t>(apply_post_scale_device(
+                    val, post_scale, post_scale_numel, out_c));
             }
         }
     }
@@ -307,6 +323,7 @@ __global__ void conv1x1_int16_blocked_kernel(const int16_t* __restrict__ input,
 __global__ void depthwise_conv2d_int16_kernel(const int16_t* __restrict__ input,
                                               const int16_t* __restrict__ weight,
                                               const int32_t* __restrict__ bias,
+                                              const int16_t* __restrict__ post_scale,
                                               int16_t* __restrict__ output,
                                               int32_t batch,
                                               int32_t channels,
@@ -318,6 +335,7 @@ __global__ void depthwise_conv2d_int16_kernel(const int16_t* __restrict__ input,
                                               int32_t padding,
                                               int32_t out_h,
                                               int32_t out_w,
+                                              int64_t post_scale_numel,
                                               bool has_bias) {
     const int64_t total = static_cast<int64_t>(batch) * channels * out_h * out_w;
     const int64_t linear_idx = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
@@ -354,7 +372,8 @@ __global__ void depthwise_conv2d_int16_kernel(const int16_t* __restrict__ input,
     }
 
     const int64_t requantized = round_shift_right_device(acc, kWeightShift);
-    output[linear_idx] = static_cast<int16_t>(clamp_int16_device(requantized));
+    output[linear_idx] = static_cast<int16_t>(apply_post_scale_device(
+        requantized, post_scale, post_scale_numel, c));
 }
 
 __global__ void requantize_gemm_output_int32_kernel(const int32_t* __restrict__ input,
@@ -537,6 +556,7 @@ __global__ void depthwise_conv3x3_lut_fused_int16_kernel(
 __global__ void conv2d_int16_tiled_kernel(const int16_t* __restrict__ input,
                                           const int16_t* __restrict__ weight,
                                           const int32_t* __restrict__ bias,
+                                          const int16_t* __restrict__ post_scale,
                                           int16_t* __restrict__ output,
                                           int32_t batch,
                                           int32_t in_channels,
@@ -551,6 +571,7 @@ __global__ void conv2d_int16_tiled_kernel(const int16_t* __restrict__ input,
                                           int32_t groups,
                                           int32_t out_h,
                                           int32_t out_w,
+                                          int64_t post_scale_numel,
                                           bool has_bias) {
     extern __shared__ int16_t shared_input[];
 
@@ -653,7 +674,8 @@ __global__ void conv2d_int16_tiled_kernel(const int16_t* __restrict__ input,
         const int64_t requantized = round_shift_right_device(acc, kWeightShift);
         const int64_t output_idx =
             (((static_cast<int64_t>(n) * out_channels) + oc) * out_h + oh) * out_w + ow;
-        output[output_idx] = static_cast<int16_t>(clamp_int16_device(requantized));
+        output[output_idx] = static_cast<int16_t>(apply_post_scale_device(
+            requantized, post_scale, post_scale_numel, oc));
     }
 }
 
@@ -714,6 +736,25 @@ __global__ void add_multiply_int16_kernel(const int16_t* __restrict__ a,
     output[idx] = static_cast<int16_t>(clamp_int16_device(rounded));
 }
 
+__global__ void multiply_int16_broadcast_kernel(const int16_t* __restrict__ input,
+                                                const int16_t* __restrict__ scale,
+                                                int16_t* __restrict__ output,
+                                                int32_t channels,
+                                                int32_t spatial_size,
+                                                int64_t scale_numel,
+                                                int64_t total) {
+    const int64_t idx = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (idx >= total) {
+        return;
+    }
+    int64_t tmp = idx / spatial_size;
+    const int32_t c = static_cast<int32_t>(tmp % channels);
+    const int64_t scale_idx =
+        scale_numel == total ? idx : (scale_numel == 1 ? 0 : static_cast<int64_t>(c));
+    const int64_t product = static_cast<int64_t>(input[idx]) * static_cast<int64_t>(scale[scale_idx]);
+    output[idx] = static_cast<int16_t>(clamp_int16_device(round_shift_right_device(product, 9)));
+}
+
 int64_t num_blocks_for(int64_t total, int threads_per_block = 256) {
     return (total + threads_per_block - 1) / threads_per_block;
 }
@@ -724,9 +765,11 @@ at::Tensor conv1x1_int16_gemm(at::Tensor input,
                               at::Tensor weight,
                               c10::optional<at::Tensor> bias_opt,
                               c10::optional<at::Tensor> residual_opt,
+                              c10::optional<at::Tensor> post_scale_opt,
                               int64_t k2_layer) {
     at::Tensor bias; if(bias_opt.has_value()) bias = bias_opt.value();
     at::Tensor residual; if(residual_opt.has_value()) residual = residual_opt.value();
+    at::Tensor post_scale; if(post_scale_opt.has_value()) post_scale = post_scale_opt.value();
 
     check_cuda_tensor(input, "input");
     check_cuda_tensor(weight, "weight");
@@ -748,6 +791,12 @@ at::Tensor conv1x1_int16_gemm(at::Tensor input,
         check_scalar_type(residual, at::kShort, "residual");
         residual = residual.contiguous();
     }
+    const bool has_post_scale = post_scale.defined() && post_scale.numel() > 0;
+    if (has_post_scale) {
+        check_cuda_tensor(post_scale, "post_scale");
+        check_scalar_type(post_scale, at::kShort, "post_scale");
+        post_scale = post_scale.contiguous();
+    }
     
 
     TORCH_CHECK(input.dim() == 4, "input must have 4 dimensions");
@@ -762,6 +811,11 @@ at::Tensor conv1x1_int16_gemm(at::Tensor input,
     TORCH_CHECK(weight.size(1) == in_channels, "weight input channels mismatch");
     if (bias.defined() && bias.numel() > 0) {
         TORCH_CHECK(bias.numel() == out_channels, "bias must have one value per output channel");
+    }
+    if (has_post_scale) {
+        TORCH_CHECK(
+            post_scale.numel() == 1 || post_scale.numel() == out_channels,
+            "post_scale must have one value or one value per output channel");
     }
 
     auto output = at::empty({batch, out_channels, height, width},
@@ -785,12 +839,14 @@ at::Tensor conv1x1_int16_gemm(at::Tensor input,
         weight.data_ptr<int16_t>(),
         has_bias ? bias.data_ptr<int32_t>() : nullptr,
         has_residual ? residual.data_ptr<int16_t>() : nullptr,
+        has_post_scale ? post_scale.data_ptr<int16_t>() : nullptr,
         output.data_ptr<int16_t>(),
         batch,
         in_channels,
         height,
         width,
         out_channels,
+        has_post_scale ? post_scale.numel() : 0,
         static_cast<int32_t>(k2_layer),
         has_bias);
     C10_CUDA_KERNEL_LAUNCH_CHECK();
@@ -1209,11 +1265,13 @@ at::Tensor conv2d_int16(at::Tensor input,
                         at::Tensor weight,
                         c10::optional<at::Tensor> bias_opt,
                         c10::optional<at::Tensor> residual_opt,
+                        c10::optional<at::Tensor> post_scale_opt,
                         int64_t stride,
                         int64_t padding,
                         int64_t groups) {
     at::Tensor bias; if(bias_opt.has_value()) bias = bias_opt.value();
     at::Tensor residual; if(residual_opt.has_value()) residual = residual_opt.value();
+    at::Tensor post_scale; if(post_scale_opt.has_value()) post_scale = post_scale_opt.value();
     check_cuda_tensor(input, "input");
     check_cuda_tensor(weight, "weight");
     check_scalar_type(input, at::kShort, "input");
@@ -1233,6 +1291,12 @@ at::Tensor conv2d_int16(at::Tensor input,
         check_cuda_tensor(residual, "residual");
         check_scalar_type(residual, at::kShort, "residual");
         residual = residual.contiguous();
+    }
+    const bool has_post_scale = post_scale.defined() && post_scale.numel() > 0;
+    if (has_post_scale) {
+        check_cuda_tensor(post_scale, "post_scale");
+        check_scalar_type(post_scale, at::kShort, "post_scale");
+        post_scale = post_scale.contiguous();
     }
     
 
@@ -1260,6 +1324,11 @@ at::Tensor conv2d_int16(at::Tensor input,
     if (bias.defined() && bias.numel() > 0) {
         TORCH_CHECK(bias.numel() == out_channels, "bias must have one value per output channel");
     }
+    if (has_post_scale) {
+        TORCH_CHECK(
+            post_scale.numel() == 1 || post_scale.numel() == out_channels,
+            "post_scale must have one value or one value per output channel");
+    }
 
     auto output = at::empty({batch, out_channels, out_h, out_w},
                             at::TensorOptions().device(input.device()).dtype(at::kShort));
@@ -1273,6 +1342,7 @@ at::Tensor conv2d_int16(at::Tensor input,
             weight.view({out_channels, channels_per_group}),
             bias,
             residual,
+            post_scale,
             kWeightScale);
     } else if (kernel_h == 1 && kernel_w == 1) {
         const int threads = 256;
@@ -1284,6 +1354,7 @@ at::Tensor conv2d_int16(at::Tensor input,
             weight.data_ptr<int16_t>(),
             has_bias ? bias.data_ptr<int32_t>() : nullptr,
             has_residual ? residual.data_ptr<int16_t>() : nullptr,
+            has_post_scale ? post_scale.data_ptr<int16_t>() : nullptr,
             output.data_ptr<int16_t>(),
             batch,
             in_channels,
@@ -1296,6 +1367,7 @@ at::Tensor conv2d_int16(at::Tensor input,
             groups_i,
             out_h,
             out_w,
+            has_post_scale ? post_scale.numel() : 0,
             kWeightScale,
             has_bias);
     } else if (groups_i == in_channels && out_channels == in_channels && channels_per_group == 1) {
@@ -1308,6 +1380,7 @@ at::Tensor conv2d_int16(at::Tensor input,
             input.data_ptr<int16_t>(),
             weight.data_ptr<int16_t>(),
             has_bias ? bias.data_ptr<int32_t>() : nullptr,
+            has_post_scale ? post_scale.data_ptr<int16_t>() : nullptr,
             output.data_ptr<int16_t>(),
             batch,
             in_channels,
@@ -1319,6 +1392,7 @@ at::Tensor conv2d_int16(at::Tensor input,
             padding_i,
             out_h,
             out_w,
+            has_post_scale ? post_scale.numel() : 0,
             has_bias);
     } else {
         const dim3 threads_per_block(kTileW, kTileH);
@@ -1336,6 +1410,7 @@ at::Tensor conv2d_int16(at::Tensor input,
             input.data_ptr<int16_t>(),
             weight.data_ptr<int16_t>(),
             has_bias ? bias.data_ptr<int32_t>() : nullptr,
+            has_post_scale ? post_scale.data_ptr<int16_t>() : nullptr,
             output.data_ptr<int16_t>(),
             batch,
             in_channels,
@@ -1350,6 +1425,7 @@ at::Tensor conv2d_int16(at::Tensor input,
             groups_i,
             out_h,
             out_w,
+            has_post_scale ? post_scale.numel() : 0,
             has_bias);
     }
     C10_CUDA_KERNEL_LAUNCH_CHECK();
@@ -1465,6 +1541,42 @@ at::Tensor add_multiply_int16(at::Tensor a,
         scale.data_ptr<int16_t>(),
         output.data_ptr<int16_t>(),
         static_cast<int32_t>(k1),
+        total);
+    C10_CUDA_KERNEL_LAUNCH_CHECK();
+    return output;
+}
+
+at::Tensor multiply_int16(at::Tensor input, at::Tensor scale, int64_t k1) {
+    check_cuda_tensor(input, "input");
+    check_cuda_tensor(scale, "scale");
+    check_scalar_type(input, at::kShort, "input");
+    check_scalar_type(scale, at::kShort, "scale");
+    TORCH_CHECK(input.dim() == 4, "input must have 4 dimensions");
+    TORCH_CHECK(k1 == 512, "multiply_int16 currently expects feature scale 512");
+
+    input = input.contiguous();
+    scale = scale.contiguous();
+    const auto channels = static_cast<int32_t>(input.size(1));
+    TORCH_CHECK(
+        scale.numel() == 1 || scale.numel() == channels || scale.numel() == input.numel(),
+        "scale must have one value, one value per channel, or one value per input element");
+    auto output = at::empty_like(input);
+
+    const int threads = 256;
+    const int64_t total = input.numel();
+    const int32_t spatial_size = static_cast<int32_t>(input.size(2) * input.size(3));
+    const dim3 blocks(static_cast<uint32_t>(num_blocks_for(total, threads)));
+    const dim3 threads_per_block(threads);
+
+    const c10::cuda::CUDAGuard guard(input.device());
+    const auto stream = at::cuda::getCurrentCUDAStream();
+    multiply_int16_broadcast_kernel<<<blocks, threads_per_block, 0, stream.stream()>>>(
+        input.data_ptr<int16_t>(),
+        scale.data_ptr<int16_t>(),
+        output.data_ptr<int16_t>(),
+        channels,
+        spatial_size,
+        scale.numel(),
         total);
     C10_CUDA_KERNEL_LAUNCH_CHECK();
     return output;

@@ -213,6 +213,7 @@ def conv2d_int16(
     activation_scale_c=None,
     scale_c=None,
     residual=None,
+    post_scale=None,
 ):
     ext = load_int16_ext()
     if (
@@ -257,14 +258,15 @@ def conv2d_int16(
             weight.reshape(weight.shape[0], weight.shape[1]).contiguous(),
             bias,
             residual.contiguous() if residual is not None else None,
+            post_scale.contiguous() if post_scale is not None else None,
             int(k2_layer),
         )
-    return ext.conv2d_int16(input_tensor, weight, bias, residual, stride, padding, groups)
+    return ext.conv2d_int16(input_tensor, weight, bias, residual, post_scale, stride, padding, groups)
 
 
-def conv1x1_int16_gemm(input_tensor, weight_2d, bias, residual=None, k2_layer=8192):
+def conv1x1_int16_gemm(input_tensor, weight_2d, bias, residual=None, post_scale=None, k2_layer=8192):
     ext = load_int16_ext()
-    return ext.conv1x1_int16_gemm(input_tensor, weight_2d, bias, residual, int(k2_layer))
+    return ext.conv1x1_int16_gemm(input_tensor, weight_2d, bias, residual, post_scale, int(k2_layer))
 
 
 def conv1x1_int8tc_gemm(
@@ -343,6 +345,11 @@ def clamp_reciprocal_int16(q, k1=512):
 def add_multiply_int16(a, b, scale, k1=512):
     ext = load_int16_ext()
     return ext.add_multiply_int16(a, b, scale, k1)
+
+
+def multiply_int16(input_tensor, scale, k1=512):
+    ext = load_int16_ext()
+    return ext.multiply_int16(input_tensor, scale, k1)
 
 
 def wsilu_chunk_add_int16(input_tensor, lut):

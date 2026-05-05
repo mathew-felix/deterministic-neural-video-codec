@@ -95,6 +95,88 @@ class Int16CudaKernelParityTest(unittest.TestCase):
 
         self.assertTrue(torch.equal(actual, expected.to(torch.int16)))
 
+    def test_optimized_1x1_kernel_with_post_scale_matches_reference(self):
+        import torch
+
+        from src.layers.int16_backend import Conv2dInt16Params, conv2d_int16_reference
+        from src.layers.int16_cuda_ext import conv1x1_int16_gemm
+
+        input_i16 = torch.arange(-18, 18, dtype=torch.int16).reshape(1, 4, 3, 3)
+        weight = torch.tensor(
+            [
+                [1, -2, 0, 3],
+                [0, 1, -1, 2],
+                [2, 0, 1, -1],
+                [-1, 3, 2, 0],
+            ],
+            dtype=torch.int16,
+        )
+        bias = torch.tensor([2, -3, 4, -5], dtype=torch.int32)
+        residual = torch.full((1, 4, 3, 3), 7, dtype=torch.int16)
+        post_scale = torch.tensor([256, 512, 1024, 768], dtype=torch.int16)
+        params = Conv2dInt16Params(
+            weight=weight.reshape(4, 4, 1, 1),
+            bias=bias,
+            k2_layer=1,
+            stride=1,
+            padding=0,
+            groups=1,
+        )
+
+        expected = conv2d_int16_reference(
+            input_i16,
+            params,
+            residual=residual,
+            post_scale=post_scale,
+        )
+        actual = conv1x1_int16_gemm(
+            input_i16.to(self.device),
+            weight.to(self.device),
+            bias.to(self.device),
+            residual=residual.to(self.device),
+            post_scale=post_scale.to(self.device),
+            k2_layer=1,
+        ).cpu()
+
+        self.assertTrue(torch.equal(actual, expected.to(torch.int16)))
+
+    def test_multiply_kernel_broadcasts_per_channel_like_reference(self):
+        import torch
+
+        from src.layers.int16_backend import multiply_int16 as multiply_reference
+        from src.layers.int16_cuda_ext import multiply_int16
+
+        input_i16 = torch.tensor(
+            [[[[100, -100]], [[200, -200]], [[300, -300]]]],
+            dtype=torch.int16,
+        )
+        scale = torch.tensor([256, 512, 1024], dtype=torch.int16)
+
+        expected = multiply_reference(input_i16, scale.reshape(1, 3, 1, 1), 512)
+        actual = multiply_int16(input_i16.to(self.device), scale.to(self.device), 512).cpu()
+
+        self.assertTrue(torch.equal(actual, expected))
+
+    def test_multiply_kernel_accepts_full_tensor_scale(self):
+        import torch
+
+        from src.layers.int16_backend import multiply_int16 as multiply_reference
+        from src.layers.int16_cuda_ext import multiply_int16
+
+        input_i16 = torch.tensor(
+            [[[[100, -100]], [[200, -200]], [[300, -300]]]],
+            dtype=torch.int16,
+        )
+        scale = torch.tensor(
+            [[[[256, 512]], [[512, 1024]], [[1024, 256]]]],
+            dtype=torch.int16,
+        )
+
+        expected = multiply_reference(input_i16, scale, 512)
+        actual = multiply_int16(input_i16.to(self.device), scale.to(self.device), 512).cpu()
+
+        self.assertTrue(torch.equal(actual, expected))
+
     def test_fused_depthwise_lut_kernel_matches_unfused_reference(self):
         import torch
 

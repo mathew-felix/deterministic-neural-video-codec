@@ -1,9 +1,9 @@
 # DCVC INT16 Runtime — Project Configuration
 #
-# Copy this file to config.yaml and edit the values for your machine.
-# config.yaml is gitignored so your local paths never end up in the repo.
+# Copy this file to config/config.yaml and edit the values for your machine.
+# config/config.yaml is gitignored so your local paths never end up in the repo.
 #
-# Priority: CLI flag > config.yaml > script default
+# Priority: CLI flag > config/config.yaml > script default
 #
 # Run the full build pipeline with one command after filling in this file:
 #   python pipeline.py
@@ -13,7 +13,7 @@
 #   python pipeline.py --step export
 #   python pipeline.py --step calibrate
 #
-# Or use individual scripts directly — they all read from config.yaml:
+# Or use individual scripts directly — they all read from config/config.yaml:
 #   python scripts/freeze_entropy_cdfs.py
 #   python encode_mp4_to_bin.py
 

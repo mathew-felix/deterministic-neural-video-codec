@@ -44,14 +44,14 @@ from src.config_loader import get, load_config
 
 # ---------------------------------------------------------------------------
 # Configuration — update BUNDLE_URL after creating the GitHub release.
-# Set in config.yaml under release.bundle_url, or via DCVC_BUNDLE_URL env var.
+# Set in config/config.yaml under release.bundle_url, or via DCVC_BUNDLE_URL env var.
 # ---------------------------------------------------------------------------
 _cfg = load_config()
 BUNDLE_URL = (
     os.environ.get("DCVC_BUNDLE_URL")
     or get(_cfg, "release", "bundle_url")
     or (
-        "https://github.com/felixmathew/deterministic-neural-video-codec"
+        "https://github.com/mathew-felix/deterministic-neural-video-codec"
         "/releases/download/v1.0.0/int16_bundle_v1.0.0.pt"
     )
 )
@@ -172,8 +172,8 @@ def download(
     """
     dest = output_dir / BUNDLE_FILENAME
 
-    if "felixmathew/deterministic-neural-video-codec/releases/download/v1.0.0" in url:
-        # Placeholder URL — the release has not been created yet.
+    if not url or "github.com/.../releases/download/..." in url:
+        # Placeholder or missing URL.
         print("ERROR: The bundle download URL has not been configured yet.")
         print()
         print("Set the DCVC_BUNDLE_URL environment variable or pass --url to point")

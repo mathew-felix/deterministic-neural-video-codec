@@ -40,7 +40,7 @@ Before running anything, confirm these files are in place:
 deterministic-neural-video-codec/
 ├── models/
 │   └── int16_bundle_v1.0.0.pt          ← INT16 calibrated bundle (see Step 2)
-├── config.yaml                          ← copied from config.example.yaml
+├── config/config.yaml                          ← copied from config/config.example.yaml
 └── test.mp4                             ← any 1280×720 30fps test clip
 ```
 
@@ -83,7 +83,7 @@ python scripts/download_models.py --sha256 <digest-from-release-notes>
 ```
 
 Place the downloaded file at `models/int16_bundle_v1.0.0.pt` and update
-`config.yaml` to point to it:
+`config/config.yaml` to point to it:
 
 ```yaml
 models:
@@ -99,7 +99,7 @@ models:
 
 2. Copy and edit the config:
    ```bash
-   cp config.example.yaml config.yaml
+   cp config/config.example.yaml config/config.yaml
    # Set models.checkpoint_i and models.checkpoint_p to the paths above
    ```
 
@@ -116,14 +116,14 @@ models:
    on a mid-range GPU.
 
 5. The output bundle is written to `models/` using the name set in
-   `config.yaml` under `models.bundle`.
+   `config/config.yaml` under `models.bundle`.
 
 ---
 
-## Step 3 — Set Up config.yaml
+## Step 3 — Set Up config/config.yaml
 
 ```bash
-cp config.example.yaml config.yaml
+cp config/config.example.yaml config/config.yaml
 ```
 
 Minimum required edits:
@@ -241,16 +241,16 @@ cross-device bitstreams. Closing the gap requires Quantization-Aware Training.
 ## Troubleshooting
 
 **`models/int16_bundle_v1.0.0.pt` not found**
-Run `python scripts/download_models.py` or check `config.yaml` bundle path.
+Run `python scripts/download_models.py` or check `config/config.yaml` bundle path.
 
-**`config.yaml not found`**
-Run `cp config.example.yaml config.yaml` and fill in model paths.
+**`config/config.yaml not found`**
+Run `cp config/config.example.yaml config/config.yaml` and fill in model paths.
 
 **CUDA out of memory during calibration**
-Reduce `frames_per_clip` in `config.yaml` or use fewer calibration clips.
+Reduce `frames_per_clip` in `config/config.yaml` or use fewer calibration clips.
 
 **Bitstream does not match reference**
-Check that `config.yaml` points to the exact same bundle version and that
+Check that `config/config.yaml` points to the exact same bundle version and that
 no flags differ between runs (`qp_i`, `qp_p`, `reset_interval`, `frames`).
 
 **Tests fail after install**

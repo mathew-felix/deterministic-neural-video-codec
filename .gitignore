@@ -163,7 +163,8 @@ slurm-*.err
 *.sbatch.out
 *.sbatch.err
 
-# Project config (user-local, copy from config.example.yaml)
+# Project config (user-local, copy from config/config.example.yaml)
+config/config.yaml
 config.yaml
 
 # Environment and secrets

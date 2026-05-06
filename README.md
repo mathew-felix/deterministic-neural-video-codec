@@ -111,14 +111,14 @@ python build_int16_cuda.py
 
 ## Configuration
 
-All scripts read from a single `config.yaml` in the project root. Copy the
+All scripts read from a single config file at `config/config.yaml`. Copy the
 template and edit the two lines that point to your local DCVC-RT checkpoints:
 
 ```bash
-cp config.example.yaml config.yaml
+cp config/config.example.yaml config/config.yaml
 ```
 
-Minimum edits inside `config.yaml`:
+Minimum edits inside `config/config.yaml`:
 
 ```yaml
 models:
@@ -131,31 +131,9 @@ calibration:
 
 Every script reads this file automatically — no need to pass long argument
 lists on every run. Any argument can still be overridden on the command line;
-the priority is always **CLI flag > config.yaml > built-in default**.
+the priority is always **CLI flag > config/config.yaml > built-in default**.
 
-`config.yaml` is gitignored so your local paths never end up in the repository.
-
----
-
-## Public Release Scope
-
-Keep the repository source-only. Large runtime artifacts stay outside git.
-
-**Keep in the public repository**
-- Source code under `src/`, `scripts/`, `tools/`, and CLI entry points.
-- Public documentation: `README.md`, `REPRODUCE.md`, and `docs/*.md`.
-- Small reproducibility templates in `assets/` (`*.example.json`, `*.example.csv`).
-
-**Download or generate locally (do not commit)**
-- Model checkpoints and bundles under `models/` (`*.pt`, `*.pth`, `*.tar`).
-- Calibration clips under `calibrate_videos/`.
-- Encoded streams and reconstructions under `outputs/` and `artifacts/`.
-
-**Moved to a private archive outside this repository**
-- Internal audit notes, release checklists, and plan/history documents.
-- Local experiment summaries that are not part of the public reproducibility story.
-
-Model naming and versioning rules are in `models/README.md`.
+`config/config.yaml` is gitignored so your local paths never end up in the repository.
 
 ---
 
@@ -179,7 +157,7 @@ python encode_mp4_to_bin.py --input_mp4 test.mp4 --frames 2 --check_only
 ### Option B — Build from scratch
 
 Use this if you want to produce the bundle yourself from the upstream Microsoft
-DCVC-RT checkpoint. After setting up `config.yaml`, place your calibration
+DCVC-RT checkpoint. After setting up `config/config.yaml`, place your calibration
 videos in `calibrate_videos/` and run:
 
 ```bash
@@ -208,7 +186,7 @@ and calibration recommendations.
 
 ## Usage
 
-With `config.yaml` set up, most runs need no arguments at all.
+With `config/config.yaml` set up, most runs need no arguments at all.
 
 ### Encode
 
@@ -217,7 +195,7 @@ python encode_mp4_to_bin.py
 ```
 
 The input video, QP, output directory, and device are all read from
-`config.yaml`. Override any value on the command line when needed:
+`config/config.yaml`. Override any value on the command line when needed:
 
 ```bash
 python encode_mp4_to_bin.py --input_mp4 myvideo.mp4 --frames 64 --qp_p 21
@@ -259,7 +237,7 @@ python encode_mp4_to_bin.py --check_only
 
 ### CUDA Graph Acceleration
 
-Set `enable_pframe_graphs: true` in `config.yaml` under `encode:`, or pass
+Set `enable_pframe_graphs: true` in `config/config.yaml` under `encode:`, or pass
 the flag explicitly:
 
 ```bash
@@ -320,7 +298,9 @@ deterministic-neural-video-codec/
 ├── CONTRIBUTING.md
 ├── CHANGELOG.md
 ├── requirements.txt
-├── config.example.yaml        config template — copy to config.yaml and edit
+├── config/
+│   ├── config.example.yaml       config template — copy to config.yaml and edit
+│   └── README.md                 config usage notes
 ├── pipeline.py                one-command full model build pipeline
 ├── encode_mp4_to_bin.py       command-line encoder (MP4 → .bin)
 ├── decode_bin_to_mp4.py       command-line decoder (.bin → MP4)

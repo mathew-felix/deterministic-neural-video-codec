@@ -2,7 +2,7 @@
 
 Priority order (highest wins):
   1. CLI argument (explicit --flag on the command line)
-  2. config.yaml value  (project-local user config)
+  2. config/config.yaml value  (project-local user config)
   3. argparse default   (hardcoded fallback in each script)
 
 Usage in any script::
@@ -18,7 +18,7 @@ Usage in any script::
         return parser.parse_args()
 
 The `section` argument in `apply_config_defaults` maps directly to a top-level
-YAML key in config.yaml. Model paths are always pulled from the ``models``
+YAML key in config/config.yaml. Model paths are always pulled from the ``models``
 section regardless of which section is active.
 """
 
@@ -39,7 +39,8 @@ def load_config(path: str | Path | None = None) -> dict:
     Searches for the config file in this order:
     1. ``path`` argument (if provided)
     2. ``DCVC_CONFIG`` environment variable
-    3. ``<project-root>/config.yaml``
+    3. ``<project-root>/config/config.yaml`` (preferred)
+    4. ``<project-root>/config.yaml`` (legacy fallback)
 
     Returns an empty dict if no config file is found (not an error).
 
@@ -53,7 +54,12 @@ def load_config(path: str | Path | None = None) -> dict:
 
     if path is None:
         env_path = os.environ.get("DCVC_CONFIG")
-        path = Path(env_path) if env_path else ROOT / "config.yaml"
+        if env_path:
+            path = Path(env_path)
+        else:
+            preferred = ROOT / "config" / "config.yaml"
+            legacy = ROOT / "config.yaml"
+            path = preferred if preferred.exists() else legacy
 
     path = Path(path)
     if not path.exists():
@@ -154,7 +160,7 @@ def add_config_arg(parser: "argparse.ArgumentParser") -> None:
         metavar="PATH",
         help=(
             "Path to a YAML config file. "
-            "Defaults to config.yaml in the project root, "
+            "Defaults to config/config.yaml in the project root, "
             "or the DCVC_CONFIG environment variable."
         ),
     )

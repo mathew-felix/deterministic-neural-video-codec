@@ -9,7 +9,7 @@ to a calibrated INT16 bundle ready for encode/decode:
   Step 3  manifest  Scan calibrate_videos/ and write the calibration manifest.
   Step 4  calibrate Run calibration clips and refine per-layer activation scales.
 
-All paths and settings are read from config.yaml (copy from config.example.yaml).
+All paths and settings are read from config/config.yaml (copy from config/config.example.yaml).
 
 Usage:
     # Run the full pipeline:
@@ -22,7 +22,7 @@ Usage:
     python pipeline.py --step calibrate
 
     # Use a non-default config file:
-    python pipeline.py --config path/to/my_config.yaml
+    python pipeline.py --config path/to/my_config/config.yaml
 
     # Dry-run: print what would be executed without running anything:
     python pipeline.py --dry_run
@@ -58,7 +58,7 @@ def _step_freeze(cfg: dict, dry_run: bool, config_flag: list[str]) -> None:
     fzt      = get(cfg, "build", "force_zero_thres")
 
     if not model_i:
-        _fatal("models.checkpoint_i not set in config.yaml")
+        _fatal("models.checkpoint_i not set in config/config.yaml")
 
     cmd = [sys.executable, "scripts/freeze_entropy_cdfs.py",
            "--model_path_i", model_i,
@@ -82,7 +82,7 @@ def _step_export(cfg: dict, dry_run: bool, config_flag: list[str]) -> None:
     fzt       = get(cfg, "build", "force_zero_thres")
 
     if not model_i:
-        _fatal("models.checkpoint_i not set in config.yaml")
+        _fatal("models.checkpoint_i not set in config/config.yaml")
 
     frozen_path = Path(frozen)
     if not frozen_path.exists():
@@ -212,7 +212,7 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default=None,
         metavar="PATH",
-        help="Path to YAML config file (default: config.yaml).",
+        help="Path to YAML config file (default: config/config.yaml).",
     )
     parser.add_argument(
         "--dry_run",
@@ -229,14 +229,14 @@ def main() -> None:
 
     if not cfg:
         print(
-            "ERROR: config.yaml not found.\n"
+            "ERROR: config/config.yaml not found.\n"
             "\n"
             "Create it from the template and fill in your checkpoint paths:\n"
             "\n"
-            "  Windows:  copy config.example.yaml config.yaml\n"
-            "  Linux:    cp config.example.yaml config.yaml\n"
+            "  Windows:  copy config/config.example.yaml config/config.yaml\n"
+            "  Linux:    cp config/config.example.yaml config/config.yaml\n"
             "\n"
-            "Then edit config.yaml and set at minimum:\n"
+            "Then edit config/config.yaml and set at minimum:\n"
             "\n"
             "  models:\n"
             "    checkpoint_i: models/cvpr2025_image.pth.tar\n"

@@ -1,0 +1,134 @@
+# DCVC INT16 Runtime — Project Configuration
+#
+# Copy this file to config.yaml and edit the values for your machine.
+# config.yaml is gitignored so your local paths never end up in the repo.
+#
+# Priority: CLI flag > config.yaml > script default
+#
+# Run the full build pipeline with one command after filling in this file:
+#   python pipeline.py
+#
+# Run a single step:
+#   python pipeline.py --step freeze
+#   python pipeline.py --step export
+#   python pipeline.py --step calibrate
+#
+# Or use individual scripts directly — they all read from config.yaml:
+#   python scripts/freeze_entropy_cdfs.py
+#   python encode_mp4_to_bin.py
+
+
+# ---------------------------------------------------------------------------
+# Model paths
+# These are shared across all scripts. Every script that needs a model path
+# will read from here unless you override it on the command line.
+# ---------------------------------------------------------------------------
+models:
+  # Microsoft DCVC-RT FP16 checkpoints (obtain from https://github.com/microsoft/DCVC)
+  checkpoint_i: models/cvpr2025_image.pth.tar
+  checkpoint_p: models/cvpr2025_video.pth.tar
+
+  # Intermediate frozen entropy tables (produced by Step 1 / pipeline --step freeze)
+  frozen_entropy: models/frozen_entropy_state.pt
+
+  # Final INT16 calibrated bundle (produced by Steps 2-3 / pipeline --step export + calibrate)
+  bundle: models/int16_bundle_v1.0.0.pt
+
+  # SHA-256 of the bundle — fill this in after building to enable integrity checks.
+  # Get it by running: python scripts/download_models.py --force (prints digest)
+  bundle_sha256: ""
+
+
+# ---------------------------------------------------------------------------
+# Build settings  (used by freeze_entropy_cdfs.py and export_int16_bundle.py)
+# ---------------------------------------------------------------------------
+build:
+  # Device for loading and exporting models.
+  # Use "cpu" unless you have a specific reason to use CUDA here — the export
+  # process does not benefit significantly from GPU acceleration.
+  device: cpu
+
+  # Optional: set a custom zero-threshold for entropy CDF freezing.
+  # Leave null to use the model's default.
+  force_zero_thres: null
+
+
+# ---------------------------------------------------------------------------
+# Calibration settings  (used by calibrate_int16_bundle.py and build_manifest.py)
+# ---------------------------------------------------------------------------
+calibration:
+  # Folder containing your calibration video clips (.mp4, .mkv, .mov)
+  # Run: python scripts/build_manifest.py  to scan this folder and generate the manifest.
+  videos_dir: calibrate_videos
+
+  # Auto-generated manifest JSON (output of build_manifest.py, input to calibrate_int16_bundle.py)
+  manifest: assets/manifests/calibration_manifest.generated.json
+
+  # Frames to process per clip. Use at least 300 for stable activation statistics.
+  # The first ~50 frames are I-frame transient; the rest are steady-state P-frames.
+  frames_per_clip: 300
+
+  # QP for calibration inference. Use the lowest QP you plan to encode at in production.
+  # Lower QP → larger residuals → higher activations → tighter calibration needed.
+  qp: 32
+
+  # Percentile used to set the activation clamp boundary.
+  # 99.9 means 0.1% of activations may exceed the boundary.
+  # Lower values are more conservative; higher values allow occasional overflow.
+  percentile: 99.9
+
+  # Device for calibration inference. Use cuda:0 for speed.
+  device: "cuda:0"
+
+
+# ---------------------------------------------------------------------------
+# Encode settings  (used by encode_mp4_to_bin.py)
+# ---------------------------------------------------------------------------
+encode:
+  # Default input video. Override with --input_mp4 on the command line.
+  input_mp4: test.mp4
+
+  # Number of frames to encode. -1 encodes the full video.
+  frames: -1
+
+  # I-frame and P-frame quantisation parameters. Higher = smaller file, lower quality.
+  # Typical range: 21 (high quality) to 63 (low quality).
+  qp_i: 32
+  qp_p: 32
+
+  # Output directory for .bin bitstream and JSON sidecar.
+  output_dir: outputs
+
+  # Device for inference. Use cuda:0 for full speed.
+  device: "cuda:0"
+
+  # Enable CUDA Graph capture for P-frame NN forward pass.
+  # Reduces CPU launch overhead on desktop GPUs.
+  # WARNING: increases GPU memory usage. Do not enable on Jetson Orin Nano (8 GB).
+  enable_pframe_graphs: false
+
+  # Feature-adaptor reset interval. Do not change unless you know why.
+  reset_interval: 32
+
+  # Frames skipped when computing average steady-state encode time in the summary.
+  warmup_skip: 10
+
+
+# ---------------------------------------------------------------------------
+# Decode settings  (used by decode_bin_to_mp4.py)
+# ---------------------------------------------------------------------------
+decode:
+  # Device for decode inference.
+  device: "cuda:0"
+
+  # Frames skipped when computing average steady-state decode time.
+  warmup_skip: 10
+
+
+# ---------------------------------------------------------------------------
+# Release settings  (used by scripts/download_models.py)
+# ---------------------------------------------------------------------------
+release:
+  # Direct URL to the INT16 bundle asset in your GitHub release.
+  # Update this after creating the release and set bundle_sha256 above.
+  bundle_url: ""

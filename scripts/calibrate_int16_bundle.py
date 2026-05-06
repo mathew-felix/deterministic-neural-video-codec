@@ -8,7 +8,7 @@ refined bundle with activation-aware INT8 channel scales and clamp health data.
 Usage:
     python scripts/calibrate_int16_bundle.py \
         --manifest assets/manifests/calibration_manifest.example.json \
-        --bundle_path models/int16_reference_bundle_v2_calibrated.pt \
+        --bundle_path models/int16_bundle_v1.0.0.pt \
         --output models/int16_reference_bundle_v5_calibrated.pt \
         --frames_per_clip 300 \
         --qp 32
@@ -33,9 +33,13 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
+from tqdm import tqdm
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from src.config_loader import add_config_arg, apply_config_defaults, get, load_config
 
 
 def parse_args() -> argparse.Namespace:
@@ -43,23 +47,24 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Calibrate INT16 bundle activation scales from representative clips."
     )
+    add_config_arg(parser)
     parser.add_argument(
         "--manifest",
         type=str,
-        required=True,
+        default="assets/manifests/calibration_manifest.generated.json",
         help="Path to calibration manifest JSON.",
     )
     parser.add_argument(
         "--bundle_path",
         type=str,
-        default="models/int16_reference_bundle_v2_calibrated.pt",
+        default="models/int16_bundle_v1.0.0.pt",
         help="Path to the input INT16 reference bundle.",
     )
     parser.add_argument(
         "--output",
         type=str,
-        default="models/int16_reference_bundle_v5_calibrated.pt",
-        help="Output path for the calibrated bundle.",
+        default=None,
+        help="Output path for the calibrated bundle (defaults to overwriting bundle_path).",
     )
     parser.add_argument(
         "--frames_per_clip",
@@ -90,7 +95,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Load manifest and bundle, report structure, but skip inference.",
     )
-    return parser.parse_args()
+
+    known, _ = parser.parse_known_args()
+    cfg = load_config(known.config)
+    apply_config_defaults(parser, cfg, "calibration")
+    # manifest key in config is "manifest", output is bundle path by default
+    if get(cfg, "calibration", "manifest"):
+        parser.set_defaults(manifest=get(cfg, "calibration", "manifest"))
+
+    args = parser.parse_args()
+    if args.output is None:
+        args.output = args.bundle_path
+    return args
 
 
 def resolve_path(path_str: str) -> Path:
@@ -129,9 +145,17 @@ class ActivationStatisticsCollector:
 
     For each layer that is observed, this collector tracks:
     - Running min/max absolute values
-    - Running histogram of absolute values (for percentile computation)
-    - Sample count
+    - A capped sample buffer for percentile computation
+    - Observation count
+
+    The sample buffer is capped at *max_samples* per layer so that long
+    calibration runs (many clips × many frames) do not accumulate unbounded
+    memory. 50,000 samples per layer is more than sufficient to estimate the
+    99.9th percentile accurately.
     """
+
+    MAX_SAMPLES_PER_LAYER = 50_000
+    SAMPLES_PER_FRAME = 10_000
 
     def __init__(self, percentile: float = 99.9):
         self.percentile = percentile
@@ -139,10 +163,14 @@ class ActivationStatisticsCollector:
             "count": 0,
             "abs_max": 0,
             "abs_values": [],
+            "stored_samples": 0,
         })
 
     def observe(self, module_name: str, tensor) -> None:
         """Record activation statistics for a single forward pass.
+
+        Stops accumulating samples for a layer once the per-layer cap is
+        reached. The running abs_max is always updated regardless of the cap.
 
         Args:
             module_name: Fully qualified module name (e.g., 'DMC.encoder.conv1').
@@ -158,15 +186,24 @@ class ActivationStatisticsCollector:
         stats["abs_max"] = max(stats["abs_max"], abs_max)
         stats["count"] += 1
 
-        # Sample a subset for percentile estimation (avoid OOM on long runs)
+        # Stop collecting samples once we have enough for accurate percentile estimation.
+        if stats["stored_samples"] >= self.MAX_SAMPLES_PER_LAYER:
+            return
+
         flat = tensor.detach().abs().to(torch.int32).flatten()
-        if flat.numel() > 10000:
-            indices = torch.randperm(flat.numel(), device=flat.device)[:10000]
+        if flat.numel() > self.SAMPLES_PER_FRAME:
+            indices = torch.randperm(flat.numel(), device=flat.device)[:self.SAMPLES_PER_FRAME]
             flat = flat[indices]
-        stats["abs_values"].append(flat.cpu())
+
+        flat_cpu = flat.cpu()
+        stats["abs_values"].append(flat_cpu)
+        stats["stored_samples"] += flat_cpu.numel()
 
     def compute_percentile_scales(self) -> dict[str, int]:
         """Compute per-layer activation scales from the collected statistics.
+
+        Processes one layer at a time and frees the sample buffer immediately
+        after computing the scale to minimise peak RAM usage.
 
         Returns:
             Dictionary mapping module_name -> recommended INT8 activation scale.
@@ -182,19 +219,23 @@ class ActivationStatisticsCollector:
                 continue
 
             all_abs = torch.cat(stats["abs_values"])
+            # Free the buffer immediately to keep peak RAM low.
+            stats["abs_values"].clear()
+
             if all_abs.numel() == 0:
                 scales[module_name] = 1
                 continue
 
-            # Compute the percentile value
             sorted_vals = torch.sort(all_abs).values
+            del all_abs
+
             idx = min(
                 int(len(sorted_vals) * (self.percentile / 100.0)),
                 len(sorted_vals) - 1,
             )
             percentile_val = int(sorted_vals[idx].item())
+            del sorted_vals
 
-            # Pick a power-of-two scale that covers this percentile
             scale = _pick_power_of_two_scale(percentile_val, limit=127)
             scales[module_name] = scale
 
@@ -268,6 +309,13 @@ def run_calibration_clip(
         processed = 0
         last_qp = 0
 
+        frame_bar = tqdm(
+            total=frames,
+            desc=f"  {clip_path.stem[:30]}",
+            unit="fr",
+            leave=False,
+            ncols=80,
+        )
         try:
             with torch.no_grad():
                 for frame_idx in range(frames):
@@ -294,7 +342,9 @@ def run_calibration_clip(
                         last_qp = curr_qp
 
                     processed += 1
+                    frame_bar.update(1)
         finally:
+            frame_bar.close()
             reader.close()
         return processed
 
@@ -347,13 +397,21 @@ def main() -> None:
     # Run calibration clips
     total_frames = 0
     clip_results = []
-    for clip_entry in manifest["clips"]:
+    clip_bar = tqdm(
+        manifest["clips"],
+        desc="Clips",
+        unit="clip",
+        ncols=80,
+    )
+    for clip_entry in clip_bar:
         clip_path = resolve_path(clip_entry["path"])
+        clip_bar.set_postfix({"clip": clip_entry["name"][:20]})
+
         if not clip_path.exists():
-            print(f"[calibrate] WARNING: Clip not found, skipping: {clip_path}")
+            tqdm.write(f"[calibrate] WARNING: Clip not found, skipping: {clip_path}")
             continue
 
-        print(f"[calibrate] Processing: {clip_entry['name']} ({clip_path})")
+        tqdm.write(f"[calibrate] {clip_entry['name']} ({clip_path.name})")
         t0 = time.perf_counter()
         processed = run_calibration_clip(
             p_frame_net, i_frame_net, clip_path,
@@ -368,7 +426,7 @@ def main() -> None:
             "frames_processed": processed,
             "time_sec": round(elapsed, 2),
         })
-        print(f"  → {processed} frames in {elapsed:.1f}s")
+        tqdm.write(f"  → {processed} frames in {elapsed:.1f}s")
 
     # Compute calibrated scales
     scales = collector.compute_percentile_scales()

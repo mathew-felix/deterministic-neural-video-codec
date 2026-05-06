@@ -11,7 +11,7 @@ surface:
   decode metrics next to the output.
 - `bootstrap_runtime.py` installs Python dependencies, builds the rANS
   extension, and attempts optional CUDA extension preloading.
-- `tools/compare_bitstreams.py` remains the Tier A byte/SHA-256 equivalence
+- `tools/compare_bitstreams.py` is the byte/SHA-256 equivalence
   checker.
 - `scripts/download_models.*` documents and automates local model placement
   without tracking checkpoints in git.
@@ -22,7 +22,7 @@ The repository intentionally does not track videos, model bundles, generated
 bitstreams, YUV files, or decoded MP4s. Full encode/decode validation requires:
 
 ```text
-models/int16_reference_bundle_v2_calibrated.pt
+models/int16_bundle_v1.0.0.pt
 ```
 
 The local smoke clip is also ignored by git. Use `--check_only` to validate the
@@ -46,7 +46,7 @@ Expected result: `all_sha256_equal: true`, exit code 0.
 
 ## Cross-Device Determinism Protocol
 
-This is the core validation that justifies the INT16 approach.
+Use this procedure to validate a bitstream across two supported devices.
 
 ### Step 1: Encode on Device A (e.g., Jetson)
 
@@ -118,7 +118,7 @@ When the model bundle is available:
 ```powershell
 python encode_mp4_to_bin.py --input_mp4 .\test.mp4 --frames 2 --output_dir outputs\smoke
 python decode_bin_to_mp4.py --input_bin outputs\smoke\<name>.bin
-python tools\compare_bitstreams.py outputs\smoke\<run_a>.bin outputs\smoke\<run_b>.bin --expect_equal
+python tools\compare_bitstreams.py outputs\run_a\*.bin outputs\run_b\*.bin --expect_equal
 ```
 
 ## Equivalence Metadata
@@ -134,5 +134,5 @@ The encode sidecar JSON records an `equivalence_class` object containing:
 - QP settings and reset interval
 - Runtime flags (encode-only, CUDA graphs, async entropy, profiling)
 
-Two encodes should produce identical bitstreams if and only if their
-equivalence class objects match on all fields except timing data.
+Two encodes are expected to produce identical bitstreams when their equivalence
+class fields match, excluding timing data and local output paths.

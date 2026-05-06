@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from src.config_loader import add_config_arg, apply_config_defaults, load_config
 from src.layers.cuda_inference import replicate_pad
 from src.models.int16_reference import DMCIInt16Reference, DMCInt16Reference
 from src.utils.stream_helper import SPSHelper, write_ip, write_sps
@@ -38,6 +39,7 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="Standalone DCVC-RT INT16 encoder: mp4 -> .bin"
     )
+    add_config_arg(parser)
     parser.add_argument(
         "--input_mp4",
         type=str,
@@ -47,7 +49,7 @@ def parse_args(argv=None):
     parser.add_argument(
         "--bundle_path",
         type=str,
-        default="models/int16_reference_bundle_v2_calibrated.pt",
+        default="models/int16_bundle_v1.0.0.pt",
         help="Path to the local int16 reference bundle.",
     )
     parser.add_argument(
@@ -131,6 +133,11 @@ def parse_args(argv=None):
         action="store_true",
         help="Validate MP4 metadata, runtime flags, and bundle presence without encoding.",
     )
+
+    known, _ = parser.parse_known_args(argv)
+    cfg = load_config(known.config)
+    apply_config_defaults(parser, cfg, "encode")
+
     return parser.parse_args(argv)
 
 

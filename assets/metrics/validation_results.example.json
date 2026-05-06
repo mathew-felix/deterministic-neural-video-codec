@@ -1,0 +1,32 @@
+{
+  "note": "Replace all placeholder values with results from your own validated run before publishing.",
+  "bundle_version": "v1.0.0",
+  "bundle_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "test_clip": {
+    "resolution": "1280x720",
+    "fps": 30,
+    "frames": 300,
+    "qp_i": 32,
+    "qp_p": 32
+  },
+  "encode": {
+    "device": "NVIDIA RTX (Ampere)",
+    "avg_pframe_ms": 197.0,
+    "avg_iframe_ms": 353.0,
+    "total_bits": 16364584,
+    "bpp": 0.020039,
+    "psnr_db": 37.31,
+    "bitstream_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "cross_device_decode": {
+    "device": "NVIDIA RTX (Turing)",
+    "avg_decode_ms": 166.4,
+    "bitstream_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "sha256_matches_encoder": true
+  },
+  "fp16_reference": {
+    "psnr_db": 38.59,
+    "psnr_gap_vs_int16_db": 1.28,
+    "note": "FP16 is non-deterministic across GPU architectures. INT16 trades ~1.28 dB PSNR for bit-exact cross-device determinism."
+  }
+}

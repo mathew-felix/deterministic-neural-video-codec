@@ -109,6 +109,11 @@ ipython_config.py
 logs/
 run/
 runs/
+test_out*/
+nograph_out/
+graph_out/
+*_pframe_profile.json
+*_decode.json
 wandb/
 mlruns/
 tensorboard/
@@ -121,7 +126,8 @@ datasets/
 outputs/
 results/
 checkpoints/
-/models/
+/models/*
+!/models/README.md
 *.pt
 *.pth
 *.ckpt
@@ -137,15 +143,28 @@ checkpoints/
 *.mov
 *.webm
 
-# Local smoke-test clips
+# Local smoke-test clips and calibration media
 /test.mp4
 /test.mp4.mp4
+calibrate_videos/
+
+# Generated calibration manifest (contains local paths — commit only .example.json)
+assets/manifests/calibration_manifest.generated.json
+
+# Bundle SHA-256 sidecar (commit this after a validated release build)
+# models/bundle_sha256.txt
+
+# Local private notes
+private_doc/
 
 # Slurm / HPC outputs
 slurm-*.out
 slurm-*.err
 *.sbatch.out
 *.sbatch.err
+
+# Project config (user-local, copy from config.example.yaml)
+config.yaml
 
 # Environment and secrets
 .env

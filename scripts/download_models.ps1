@@ -11,7 +11,7 @@ $PrimaryReadmeUrl = 'https://github.com/microsoft/DCVC/blob/main/README.md'
 $PrimaryShareUrl = 'https://1drv.ms/f/c/2866592d5c55df8c/Esu0KJ-I2kxCjEP565ARx_YB88i0UnR6XnODqFcvZs4LcA?e=by8CO8'
 $BackupShareUrl = 'https://1drv.ms/f/c/2866592d5c55df8c/EozfVVwtWWYggCitBAAAAAABbT4z2Z10fMXISnan72UtSA?e=BID7DA'
 $RequiredFiles = @(
-    'int16_reference_bundle_v2_calibrated.pt'
+    'int16_bundle_v1.0.0.pt'
 )
 $RecommendedFiles = @(
     'cvpr2025_image.pth.tar',
@@ -91,7 +91,7 @@ Write-Host 'Place these filenames in:'
 Write-Host "  $ModelsDir"
 Write-Host ''
 Write-Host 'Required:'
-Write-Host '  - int16_reference_bundle_v2_calibrated.pt'
+Write-Host '  - int16_bundle_v1.0.0.pt'
 Write-Host ''
 Write-Host 'Recommended:'
 Write-Host '  - cvpr2025_image.pth.tar'

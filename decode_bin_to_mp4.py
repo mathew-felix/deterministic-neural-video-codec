@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from src.config_loader import add_config_arg, apply_config_defaults, load_config
 from src.models.int16_reference import DMCIInt16Reference, DMCInt16Reference
 from src.utils.stream_helper import (
     NalType,
@@ -32,6 +33,7 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Standalone DCVC-RT INT16 decoder: .bin -> .mp4"
     )
+    add_config_arg(parser)
     parser.add_argument(
         "--input_bin",
         type=str,
@@ -41,7 +43,7 @@ def parse_args():
     parser.add_argument(
         "--bundle_path",
         type=str,
-        default="models/int16_reference_bundle_v2_calibrated.pt",
+        default="models/int16_bundle_v1.0.0.pt",
         help="Path to the local int16 reference bundle.",
     )
     parser.add_argument(
@@ -73,6 +75,11 @@ def parse_args():
         action="store_true",
         help="Keep the temporary raw YUV file written before MP4 muxing.",
     )
+
+    known, _ = parser.parse_known_args()
+    cfg = load_config(known.config)
+    apply_config_defaults(parser, cfg, "decode")
+
     return parser.parse_args()
 
 

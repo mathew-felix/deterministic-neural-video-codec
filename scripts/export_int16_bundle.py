@@ -1,5 +1,15 @@
 import argparse
 import os
+import sys
+from pathlib import Path
+
+from tqdm import tqdm
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.config_loader import add_config_arg, apply_config_defaults, get, load_config
 
 
 GLOBAL_K2 = 8192
@@ -8,15 +18,26 @@ INT8_SAFE_ABS_MAX = 120
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Export DCVC models into an int16 reference bundle."
+        description="Export DCVC models into an INT16 reference bundle."
     )
-    parser.add_argument("--model_path_i", type=str, required=True)
-    parser.add_argument("--model_path_p", type=str, required=False, default=None)
-    parser.add_argument("--output_path", type=str, required=True)
-    parser.add_argument("--frozen_entropy_path", type=str, required=False, default=None)
-    parser.add_argument("--force_zero_thres", type=float, default=None, required=False)
+    add_config_arg(parser)
+    parser.add_argument("--model_path_i", type=str, default=None)
+    parser.add_argument("--model_path_p", type=str, default=None)
+    parser.add_argument("--output_path", type=str, default="models/int16_bundle_v1.0.0.pt")
+    parser.add_argument("--frozen_entropy_path", type=str, default=None)
+    parser.add_argument("--force_zero_thres", type=float, default=None)
     parser.add_argument("--device", type=str, default="cpu", choices=("cpu", "cuda"))
-    return parser.parse_args()
+
+    known, _ = parser.parse_known_args()
+    cfg = load_config(known.config)
+    apply_config_defaults(parser, cfg, "build")
+    if get(cfg, "models", "bundle"):
+        parser.set_defaults(output_path=get(cfg, "models", "bundle"))
+
+    args = parser.parse_args()
+    if not args.model_path_i:
+        parser.error("--model_path_i is required (or set models.checkpoint_i in config.yaml)")
+    return args
 
 
 def get_frozen_entropy_state(blob, key, expected_type):
@@ -116,8 +137,9 @@ def pack_weights_to_int8(model_bundle):
         pack_weight_to_int8,
     )
 
+    all_specs = list(iter_conv_param_specs(model_bundle, model_bundle.get("model_type", "model")))
     summary = []
-    for path, params in iter_conv_param_specs(model_bundle, model_bundle.get("model_type", "model")):
+    for path, params in tqdm(all_specs, desc="Packing INT8 weights", unit="layer", ncols=80):
         weight = params.get("weight")
         if not isinstance(weight, torch.Tensor) or weight.dtype != torch.int16:
             continue
@@ -240,16 +262,12 @@ def main():
     else:
         p_frame_summary = []
 
-    print("INT8 packing summary:")
-    for entry in i_frame_summary + p_frame_summary:
-        print(
-            f"{entry['path']}: range [{entry['min']}, {entry['max']}] "
-            f"k2={entry['k2_layer']} "
-            f"S_W_c_mean={entry['secondary_scale_mean']:.1f} "
-            f"S_W_c_max={entry['secondary_scale_max']} "
-            f"pct_eq_1={entry['pct_eq_1']:.0f}% "
-            f"tc_eligible={entry['tensor_core_eligible']}"
-        )
+    all_summary = i_frame_summary + p_frame_summary
+    tc_count = sum(1 for e in all_summary if e["tensor_core_eligible"])
+    print(
+        f"INT8 packing done: {len(all_summary)} layers packed "
+        f"({tc_count} tensor-core eligible)"
+    )
 
     output_dir = os.path.dirname(os.path.abspath(args.output_path))
     if output_dir:

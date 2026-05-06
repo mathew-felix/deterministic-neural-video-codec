@@ -132,27 +132,12 @@ If register spills are significant, consider:
 - Using `BLOCK_C=4` instead of `BLOCK_C=8` for narrow channel layers (48, 64,
   96 channels) to improve SM occupancy.
 
-## Real-Time Path — Strategic Options
+## Deployment Notes
 
-The 10.85× speed gap means the current INT16 path will not reach real-time
-(33 ms/frame at 30 fps) on Jetson. Three viable strategies:
-
-### Option A: Hybrid Mode (Lowest Engineering Cost)
-
-Run FP16 encode on Jetson for speed. Use INT16 only for periodic cross-device
-verification. The Jetson produces FP16 bitstreams for real-time use and
-periodically re-encodes a reference clip in INT16 to confirm bundle consistency.
-
-### Option B: Lighter Model (Medium Cost)
-
-Train a DCVC-RT variant with reduced channel widths (e.g., half-width) for edge
-deployment. Accept a modest quality reduction in exchange for lower compute. This
-requires access to the training infrastructure.
-
-### Option C: Deep Kernel Tuning (Highest Cost)
-
-Invest in SM87-specific kernel variants after Plan 13.4 Nsight profiles.
-Realistic improvement: 2–3×, but unlikely to close the full 10× gap.
+The current INT16 path is intended for deterministic validation and edge-device
+experiments, not real-time 30 fps encoding on Jetson Orin Nano. For production
+systems that require real-time encode, use this runtime as a reproducibility
+profile and validate any faster profile separately with `tools/compare_bitstreams.py`.
 
 ## Environment Variables
 

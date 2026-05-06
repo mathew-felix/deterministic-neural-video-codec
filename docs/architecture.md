@@ -7,7 +7,7 @@ The architecture separates the fast FP16 research baseline from the INT16
 interoperability profile so that performance experiments do not blur the
 bitstream contract.
 
-## Planned Layers
+## Runtime Flow
 
 ```text
 source video
@@ -33,8 +33,7 @@ source video
 - `scripts/`: model export, entropy freezing, calibration, download, and
   operational utilities.
 - `tests/`: parity, bundle-load, entropy-loop, and bitstream-equivalence tests.
-- `docs/`: design decisions, hardware constraints, validation protocol, and
-  performance evidence.
+- `docs/`: design decisions, hardware constraints, and validation protocol.
 - `assets/`: small metrics, manifests, and documentation evidence only.
 
 ## Hardware Assumptions

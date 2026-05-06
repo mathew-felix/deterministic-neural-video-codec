@@ -7,7 +7,7 @@ activations to a signed 16-bit integer grid. This calibration process determines
 the quantization scales that minimize reconstruction error while preserving the
 deterministic bitstream contract.
 
-The current production bundle is `int16_reference_bundle_v2_calibrated.pt`.
+The current production bundle is `int16_bundle_v1.0.0.pt`.
 
 ## Quantization Contract
 
@@ -29,7 +29,7 @@ FP16 DCVC-RT checkpoint (.pth)
   → scripts/freeze_entropy_cdfs.py       (freeze rANS CDF tables)
   → scripts/export_int16_bundle.py       (quantize weights, pack INT8 shadows)
   → scripts/calibrate_int16_bundle.py    (collect activation statistics, refine scales)
-  → int16_reference_bundle_v2_calibrated.pt
+  → int16_bundle_v1.0.0.pt
 ```
 
 ### Step 1: Freeze Entropy CDFs
@@ -51,7 +51,7 @@ python scripts/export_int16_bundle.py `
   --model_path_i <i_frame_checkpoint.pth> `
   --model_path_p <p_frame_checkpoint.pth> `
   --frozen_entropy_path models/frozen_entropy_state.pt `
-  --output_path models/int16_reference_bundle_v2_calibrated.pt
+  --output_path models/int16_bundle_v1.0.0.pt
 ```
 
 This quantizes all weights to INT16 using `weight_scale=8192`, packs INT8
@@ -62,7 +62,7 @@ shadow copies for eligible 1×1 convolutions, and embeds the frozen entropy stat
 ```powershell
 python scripts/calibrate_int16_bundle.py `
   --manifest assets/manifests/calibration_manifest.example.json `
-  --bundle_path models/int16_reference_bundle_v2_calibrated.pt `
+  --bundle_path models/int16_bundle_v1.0.0.pt `
   --output models/int16_reference_bundle_v5_calibrated.pt `
   --frames_per_clip 300 `
   --qp 32
@@ -79,7 +79,7 @@ paths without running inference:
 ```powershell
 python scripts/calibrate_int16_bundle.py `
   --manifest assets/manifests/calibration_manifest.example.json `
-  --bundle_path models/int16_reference_bundle_v2_calibrated.pt `
+  --bundle_path models/int16_bundle_v1.0.0.pt `
   --dry_run
 ```
 
@@ -112,10 +112,10 @@ Non-zero values indicate that activations exceeded the INT16 range during
 quantization. This does not break determinism, but it degrades reconstruction
 quality and may cause strict PSNR gate failures.
 
-## Multi-Clip Calibration Strategy (v5)
+## Calibration Clip Selection
 
-The `v2_calibrated` bundle was generated from a limited clip set. A robust
-calibration sweep should cover:
+A production calibration sweep should cover representative content instead of a
+single easy clip:
 
 | Content Type              | Target Property                           |
 | :------------------------ | :---------------------------------------- |
@@ -126,9 +126,9 @@ calibration sweep should cover:
 | Talking head / screen     | Uniform regions, low inter-frame entropy  |
 | Animation                 | Saturated colors, sharp edges, no grain   |
 
-For each type, collect activation statistics over ≥300 frames at QP 32. Use
-weighted 99.9th-percentile aggregation with content-type weights tuned to the
-target deployment distribution.
+For each type, collect activation statistics over at least 300 frames at the
+target QP. Use weighted 99.9th-percentile aggregation with weights matched to
+the intended deployment distribution.
 
 ## Known Limitations
 
@@ -152,9 +152,8 @@ Small, reviewable examples live under source control:
 | Artifact | Purpose |
 | :------- | :------ |
 | `assets/manifests/calibration_manifest.example.json` | Six-content-type calibration manifest template |
-| `assets/metrics/validation_gpu.example.csv` | Cross-device validation table shape |
-| `assets/metrics/plan19_summary.example.json` | Final performance and async-entropy decision summary |
+| `assets/metrics/validation_cross_device.example.csv` | Cross-device validation table shape |
 
 Large calibration clips, raw YUV files, checkpoints, and generated bundles stay
-outside git. Commit only sidecar summaries, SHA-256 digests, and manifest
+outside git. Track only sidecar summaries, SHA-256 digests, and manifest
 metadata needed to reproduce a result.

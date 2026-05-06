@@ -1,16 +1,38 @@
 import argparse
 import os
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.config_loader import add_config_arg, apply_config_defaults, load_config
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Freeze DCVC entropy CDF tables into a reusable cross-device artifact."
     )
-    parser.add_argument("--model_path_i", type=str, required=True)
-    parser.add_argument("--model_path_p", type=str, required=False, default=None)
-    parser.add_argument("--force_zero_thres", type=float, default=None, required=False)
-    parser.add_argument("--output_path", type=str, required=True)
+    add_config_arg(parser)
+    parser.add_argument("--model_path_i", type=str, default=None)
+    parser.add_argument("--model_path_p", type=str, default=None)
+    parser.add_argument("--force_zero_thres", type=float, default=None)
+    parser.add_argument("--output_path", type=str, default="models/frozen_entropy_state.pt")
     parser.add_argument("--device", type=str, default="cpu", choices=("cpu", "cuda"))
-    return parser.parse_args()
+
+    known, _ = parser.parse_known_args()
+    cfg = load_config(known.config)
+    apply_config_defaults(parser, cfg, "build")
+    # output_path lives under models section
+    from src.config_loader import get
+    if get(cfg, "models", "frozen_entropy"):
+        parser.set_defaults(output_path=get(cfg, "models", "frozen_entropy"))
+
+    args = parser.parse_args()
+    if not args.model_path_i:
+        parser.error("--model_path_i is required (or set models.checkpoint_i in config.yaml)")
+    return args
 
 
 def build_model(model_cls, ckpt_path, device, force_zero_thres):

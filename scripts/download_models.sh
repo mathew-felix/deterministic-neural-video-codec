@@ -8,7 +8,7 @@ PRIMARY_SHARE_URL="https://1drv.ms/f/c/2866592d5c55df8c/Esu0KJ-I2kxCjEP565ARx_YB
 BACKUP_SHARE_URL="https://1drv.ms/f/c/2866592d5c55df8c/EozfVVwtWWYggCitBAAAAAABbT4z2Z10fMXISnan72UtSA?e=BID7DA"
 
 EXPECTED_REQUIRED=(
-  "int16_reference_bundle_v2_calibrated.pt"
+  "int16_bundle_v1.0.0.pt"
 )
 EXPECTED_RECOMMENDED=(
   "cvpr2025_image.pth.tar"
@@ -61,7 +61,7 @@ if [[ -n "${DCVC_MODEL_URL_PREFIX:-}" ]]; then
   fi
 fi
 
-if [[ -f "$MODELS_DIR/int16_reference_bundle_v2_calibrated.pt" ]]; then
+if [[ -f "$MODELS_DIR/int16_bundle_v1.0.0.pt" ]]; then
   echo "Model files are ready in: $MODELS_DIR"
   for name in "${EXPECTED_RECOMMENDED[@]}" "${EXPECTED_OPTIONAL[@]}"; do
     if [[ -f "$MODELS_DIR/$name" ]]; then
@@ -85,7 +85,7 @@ Place these filenames in:
   $MODELS_DIR
 
 Required:
-  - int16_reference_bundle_v2_calibrated.pt
+  - int16_bundle_v1.0.0.pt
 
 Recommended:
   - cvpr2025_image.pth.tar

@@ -156,6 +156,8 @@ assets/manifests/calibration_manifest.generated.json
 
 # Local private notes
 private_doc/
+software_audit_prompt.md
+microsoft_DCVC/
 
 # Slurm / HPC outputs
 slurm-*.out

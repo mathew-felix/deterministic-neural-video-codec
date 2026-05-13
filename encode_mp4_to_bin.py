@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import importlib.util
 import io
 import json
 import os
@@ -19,6 +20,21 @@ if str(ROOT) not in sys.path:
 from src.config_loader import add_config_arg, apply_config_defaults, load_config
 from src.layers.cuda_inference import replicate_pad
 from src.models.int16_reference import DMCIInt16Reference, DMCInt16Reference
+
+
+def ensure_required_extensions():
+    if importlib.util.find_spec("MLCodec_extensions_cpp") is None:
+        raise SystemExit(
+            "Required extension MLCodec_extensions_cpp is not installed.\n"
+            "Install it with:\n"
+            "  python -m pip install --no-build-isolation ./src/cpp\n"
+            "Or run:\n"
+            "  python bootstrap_runtime.py"
+        )
+
+
+ensure_required_extensions()
+
 from src.utils.stream_helper import SPSHelper, write_ip, write_sps
 from src.utils.transforms import ycbcr420_to_444_np
 from src.utils.equivalence import (
@@ -132,6 +148,11 @@ def parse_args(argv=None):
         "--check_only",
         action="store_true",
         help="Validate MP4 metadata, runtime flags, and bundle presence without encoding.",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Show full Python tracebacks for setup/debug failures.",
     )
 
     known, _ = parser.parse_known_args(argv)
@@ -754,7 +775,13 @@ def encode_video(args):
 
 
 def main():
-    encode_video(parse_args())
+    args = parse_args()
+    try:
+        encode_video(args)
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        if args.verbose:
+            raise
+        raise SystemExit(f"ERROR: {exc}") from None
 
 
 if __name__ == "__main__":

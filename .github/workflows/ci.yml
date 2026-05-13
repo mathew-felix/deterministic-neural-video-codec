@@ -29,7 +29,11 @@ jobs:
 
       - name: Compile checks
         run: |
-          python -m py_compile src/layers/int16_backend.py src/models/int16_reference.py encode_mp4_to_bin.py decode_bin_to_mp4.py
+          python -m py_compile src/layers/int16_backend.py src/models/int16_reference.py encode_mp4_to_bin.py decode_bin_to_mp4.py scripts/check_setup.py scripts/quality_metrics.py
+
+      - name: Setup validator (non-CUDA)
+        run: |
+          python scripts/check_setup.py --json --allow_missing_native
 
       - name: Test (non-CUDA)
         run: |

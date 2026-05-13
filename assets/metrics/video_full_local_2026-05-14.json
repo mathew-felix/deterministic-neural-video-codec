@@ -1,0 +1,70 @@
+{
+  "artifact_type": "local_full_video_validation",
+  "date": "2026-05-14",
+  "input_video": "video.mp4",
+  "environment": {
+    "python": "3.12.0",
+    "pytorch": "2.2.2+cu121",
+    "pytorch_cuda": "12.1",
+    "gpu": "NVIDIA GeForce RTX 3070 Ti Laptop GPU",
+    "gpu_capability": "8.6",
+    "driver": "596.21"
+  },
+  "bundle": {
+    "path": "models/int16_bundle_v1.0.0.pt",
+    "size_bytes": 201024778,
+    "sha256": "c1fc2341d3faf28f16b8e77c0869aecddade674aa0b43be2b64c516f49a8554f"
+  },
+  "video": {
+    "width": 1280,
+    "height": 720,
+    "fps": 30,
+    "frames": 2593
+  },
+  "encode": {
+    "command": ".\\.venv\\Scripts\\python.exe encode_mp4_to_bin.py --input_mp4 video.mp4 --frames 2593 --output_dir outputs\\video_full",
+    "bitstream": "outputs/video_full/video_1280x720_30_2593f_q32.bin",
+    "bitstream_sha256": "d837ca00cc367c50a63d25ddff19d53a7cc7496cd66099ab73047249c4ad09ed",
+    "qp_i": 32,
+    "qp_p": 32,
+    "reset_interval": 32,
+    "total_bits": 38538800,
+    "total_bytes": 4817350,
+    "bpp": 0.016126985848652353,
+    "bitrate_kbps": 445.87890474354026,
+    "total_encode_time_sec": 630.973630499997,
+    "avg_frame_encode_time_ms": 223.58980925285022
+  },
+  "decode": {
+    "command": ".\\.venv\\Scripts\\python.exe decode_bin_to_mp4.py --input_bin outputs\\video_full\\video_1280x720_30_2593f_q32.bin --output_mp4 outputs\\video_full\\video_1280x720_30_2593f_q32_decoded.mp4 --keep_yuv",
+    "output_mp4": "outputs/video_full/video_1280x720_30_2593f_q32_decoded.mp4",
+    "frames_decoded": 2593,
+    "total_decode_time_sec": 557.7378197999933,
+    "avg_frame_decode_time_ms": 207.80797111878198
+  },
+  "quality": {
+    "method": "Original MP4 decoded to RGB24 compared against decoded raw YUV420P converted to RGB24.",
+    "frames_compared": 2593,
+    "average_psnr_rgb": 28.896943432512362,
+    "average_ms_ssim_rgb": 0.9336242754667393,
+    "min_psnr_rgb": 27.765038363268488,
+    "max_psnr_rgb": 31.65765212815107,
+    "min_ms_ssim_rgb": 0.9099301493356174,
+    "max_ms_ssim_rgb": 0.9671112172563568,
+    "metric_runtime_sec": 2236.4003861999954
+  },
+  "same_machine_determinism_smoke": {
+    "frames": 32,
+    "command_a": ".\\.venv\\Scripts\\python.exe encode_mp4_to_bin.py --input_mp4 video.mp4 --frames 32 --output_dir outputs\\determinism_a",
+    "command_b": ".\\.venv\\Scripts\\python.exe encode_mp4_to_bin.py --input_mp4 video.mp4 --frames 32 --output_dir outputs\\determinism_b",
+    "compare_command": ".\\.venv\\Scripts\\python.exe tools\\compare_bitstreams.py outputs\\determinism_a\\video_1280x720_30_32f_q32.bin outputs\\determinism_b\\video_1280x720_30_32f_q32.bin --expect_equal",
+    "bitstream_sha256": "0373a80d36a63f9327c730ee094a57c4954dcdf33f99a8a37cbe6641acdcaf42",
+    "size_bytes": 91438,
+    "all_sha256_equal": true,
+    "bytewise_equal": true
+  },
+  "notes": [
+    "This is same-machine local validation, not cross-device proof.",
+    "Use tools/compare_bitstreams.py --expect_equal for same-machine or cross-machine deterministic checks."
+  ]
+}

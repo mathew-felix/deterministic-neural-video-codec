@@ -1,5 +1,10 @@
 --extra-index-url https://download.pytorch.org/whl/cu121
 
+# Python package dependencies only.
+# For a real encode/decode runtime, run `python bootstrap_runtime.py` after
+# installing these packages. The bootstrap step installs the required local
+# rANS C++ extension from `src/cpp` and attempts optional CUDA extensions.
+
 torch==2.2.2+cu121
 numpy==1.26.4
 scipy==1.13.1

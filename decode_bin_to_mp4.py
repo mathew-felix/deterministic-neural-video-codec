@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import importlib.util
 import io
 import json
 import os
@@ -18,6 +19,21 @@ if str(ROOT) not in sys.path:
 
 from src.config_loader import add_config_arg, apply_config_defaults, load_config
 from src.models.int16_reference import DMCIInt16Reference, DMCInt16Reference
+
+
+def ensure_required_extensions():
+    if importlib.util.find_spec("MLCodec_extensions_cpp") is None:
+        raise SystemExit(
+            "Required extension MLCodec_extensions_cpp is not installed.\n"
+            "Install it with:\n"
+            "  python -m pip install --no-build-isolation ./src/cpp\n"
+            "Or run:\n"
+            "  python bootstrap_runtime.py"
+        )
+
+
+ensure_required_extensions()
+
 from src.utils.stream_helper import (
     NalType,
     SPSHelper,
@@ -74,6 +90,11 @@ def parse_args():
         "--keep_yuv",
         action="store_true",
         help="Keep the temporary raw YUV file written before MP4 muxing.",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Show full Python tracebacks for setup/debug failures.",
     )
 
     known, _ = parser.parse_known_args()
@@ -328,7 +349,13 @@ def decode_bin_to_mp4(args):
 
 
 def main():
-    decode_bin_to_mp4(parse_args())
+    args = parse_args()
+    try:
+        decode_bin_to_mp4(args)
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        if args.verbose:
+            raise
+        raise SystemExit(f"ERROR: {exc}") from None
 
 
 if __name__ == "__main__":

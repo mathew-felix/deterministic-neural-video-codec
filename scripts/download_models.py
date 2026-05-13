@@ -262,7 +262,8 @@ def main() -> None:
     )
     print(f"\nBundle ready: {dest}")
     print("\nVerify the runtime loads it correctly:")
-    print("  python encode_mp4_to_bin.py --input_mp4 test.mp4 --frames 2 --check_only")
+    print("  python scripts/check_setup.py --bundle_path models/int16_bundle_v1.0.0.pt")
+    print("  python encode_mp4_to_bin.py --input_mp4 video.mp4 --frames 2 --check_only")
 
 
 if __name__ == "__main__":

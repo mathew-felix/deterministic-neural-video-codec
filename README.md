@@ -136,7 +136,7 @@ script; it installs Python dependencies, builds the required rANS extension, and
 attempts to build the optional CUDA inference extensions.
 
 ```powershell
-git clone https://github.com/<your-username>/deterministic-neural-video-codec.git
+git clone https://github.com/mathew-felix/deterministic-neural-video-codec.git
 cd deterministic-neural-video-codec
 
 python -m venv .venv

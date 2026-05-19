@@ -148,7 +148,7 @@ python bootstrap_runtime.py
 On Linux or Jetson:
 
 ```bash
-git clone https://github.com/<your-username>/deterministic-neural-video-codec.git
+git clone https://github.com/mathew-felix/deterministic-neural-video-codec.git
 cd deterministic-neural-video-codec
 
 python3 -m venv .venv

@@ -1,4 +1,2 @@
-note,Replace sha256 values and device names with your actual run before publishing
+note,Schema-only cross-device validation template. This is not measured evidence.
 bundle_version,device,resolution,fps,frames,qp_i,qp_p,avg_pframe_ms,total_bits,bpp,psnr_db,bitstream_sha256
-v1.0.0,encoder_gpu_ampere,1280x720,30,300,32,32,197.0,16364584,0.020039,37.31,0000000000000000000000000000000000000000000000000000000000000000
-v1.0.0,decoder_gpu_turing,1280x720,30,300,32,32,166.4,16364584,0.020039,37.31,0000000000000000000000000000000000000000000000000000000000000000

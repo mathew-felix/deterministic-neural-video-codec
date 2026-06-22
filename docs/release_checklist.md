@@ -3,6 +3,9 @@
 Use this checklist before publishing a model bundle or making public
 determinism claims.
 
+For the v1.0.0 GitHub Release page, use the clean copy-paste text in
+[`docs/release_notes_v1.0.0.md`](release_notes_v1.0.0.md).
+
 ## Bundle
 
 - Build or obtain `models/int16_bundle_v1.0.0.pt`.
@@ -22,8 +25,8 @@ PY
 ```
 
 - Upload the bundle to a GitHub Release.
-- Set `release.bundle_url` in `config/config.example.yaml` or document that
-  users must pass `--url` to `scripts/download_models.py`.
+- Confirm `release.bundle_url` in `config/config.example.yaml` points to the
+  uploaded release asset.
 - Record the bundle SHA-256 in release notes, README, and validation artifacts.
 
 ## Local Smoke Test

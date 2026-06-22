@@ -58,6 +58,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", default=None, help="Config YAML path.")
     parser.add_argument("--bundle_path", default=None, help="Override INT16 bundle path.")
     parser.add_argument("--input_mp4", default=None, help="Optional MP4 path to validate.")
+    parser.add_argument("--require_config", action="store_true", help="Fail if config/config.yaml is missing.")
     parser.add_argument("--require_cuda", action="store_true", help="Fail if CUDA is unavailable.")
     parser.add_argument("--require_bundle", action="store_true", help="Fail if the bundle is missing.")
     parser.add_argument(
@@ -132,12 +133,13 @@ def main() -> int:
     )
 
     config_path = _resolve(args.config or "config/config.yaml")
+    config_ok = bool(config_path and config_path.exists())
     checks.append(
         _status(
             "config/config.yaml",
-            config_path.exists() if config_path else False,
+            config_ok,
             str(config_path) if config_path and config_path.exists() else "Copy config/config.example.yaml to config/config.yaml.",
-            False,
+            bool(args.require_config),
         )
     )
 

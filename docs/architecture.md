@@ -3,9 +3,8 @@
 ## System Goal
 
 The system is organized as a deterministic INT16 neural video codec runtime.
-The architecture separates the fast FP16 research baseline from the INT16
-interoperability profile so that performance experiments do not blur the
-bitstream contract.
+The architecture separates the upstream FP16 codec baseline from the INT16
+runtime profile so that optimization work does not blur the bitstream contract.
 
 ## Runtime Flow
 

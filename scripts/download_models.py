@@ -12,7 +12,7 @@ Usage:
     python scripts/download_models.py
 
     # Override release URL (or set DCVC_BUNDLE_URL env var):
-    python scripts/download_models.py --url https://github.com/.../releases/download/v1.0.0/int16_bundle_v1.0.0.pt
+    python scripts/download_models.py --url https://github.com/mathew-felix/deterministic-neural-video-codec/releases/download/v1.0.0/int16_bundle_v1.0.0.pt
 
     # Force re-download even if file already exists:
     python scripts/download_models.py --force
@@ -43,7 +43,7 @@ if str(ROOT) not in sys.path:
 from src.config_loader import get, load_config
 
 # ---------------------------------------------------------------------------
-# Configuration — update BUNDLE_URL after creating the GitHub release.
+# Release bundle configuration.
 # Set in config/config.yaml under release.bundle_url, or via DCVC_BUNDLE_URL env var.
 # ---------------------------------------------------------------------------
 _cfg = load_config()
@@ -177,14 +177,14 @@ def download(
         print("ERROR: The bundle download URL has not been configured yet.")
         print()
         print("Set the DCVC_BUNDLE_URL environment variable or pass --url to point")
-        print("to the actual GitHub release asset once you have created the release:")
+        print("to the GitHub release asset:")
         print()
         print("  Windows (PowerShell):")
-        print("    $env:DCVC_BUNDLE_URL = 'https://github.com/.../releases/download/...'")
+        print("    $env:DCVC_BUNDLE_URL = 'https://github.com/mathew-felix/deterministic-neural-video-codec/releases/download/v1.0.0/int16_bundle_v1.0.0.pt'")
         print("    python scripts/download_models.py")
         print()
         print("  Linux / macOS:")
-        print("    DCVC_BUNDLE_URL=https://... python scripts/download_models.py")
+        print("    DCVC_BUNDLE_URL=https://github.com/mathew-felix/deterministic-neural-video-codec/releases/download/v1.0.0/int16_bundle_v1.0.0.pt python scripts/download_models.py")
         _print_upstream_instructions()
         sys.exit(1)
 

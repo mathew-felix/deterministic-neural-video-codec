@@ -1,0 +1,63 @@
+Representative short demo output.
+
+This is a compact example of what the CLI writes for a two-frame smoke test.
+The full measured result is recorded in:
+assets/metrics/video_full_local_2026-05-14.json
+
+Command:
+python scripts/check_setup.py --input_mp4 video.mp4 --require_config --require_cuda --require_bundle
+
+Output:
+[OK] python: 3.12.0
+[OK] ffmpeg: C:\Softwares\ffmpeg-full-build\bin\ffmpeg.EXE
+[OK] ffprobe: C:\Softwares\ffmpeg-full-build\bin\ffprobe.EXE
+[OK] torch/cuda: torch 2.2.2+cu121, cuda_available=True, device=NVIDIA GeForce RTX 3070 Ti Laptop GPU
+[OK] MLCodec_extensions_cpp: installed
+[OK] inference_extensions_cuda: installed
+[OK] int16_cuda_ext: installed
+[OK] config/config.yaml: config/config.yaml
+[OK] int16 bundle: models/int16_bundle_v1.0.0.pt
+[OK] input mp4: 1280|720|2593
+
+Required setup checks passed.
+
+Command:
+python encode_mp4_to_bin.py --input_mp4 video.mp4 --frames 2 --output_dir outputs/video_smoke
+
+Output excerpt:
+{
+  "codec": "dcvc_rt_int16",
+  "mode": "encode",
+  "bitstream_path": "outputs/video_smoke/video_1280x720_30_2f_q32.bin",
+  "frames_encoded": 2,
+  "width": 1280,
+  "height": 720,
+  "fps": 30.0,
+  "qp_i": 32,
+  "qp_p": 32,
+  "bitstream_sha256": "<sha256 written by the local run>",
+  "all_frame_bpp": "<value written by the local run>",
+  "bitrate_kbps": "<value written by the local run>",
+  "avg_frame_encode_time_ms": "<value written by the local run>"
+}
+
+Command:
+python decode_bin_to_mp4.py --input_bin outputs/video_smoke/video_1280x720_30_2f_q32.bin
+
+Output excerpt:
+{
+  "codec": "dcvc_rt_int16",
+  "mode": "decode",
+  "output_mp4": "outputs/video_smoke/video_1280x720_30_2f_q32_decoded.mp4",
+  "frames_decoded": 2,
+  "width": 1280,
+  "height": 720,
+  "fps": 30.0,
+  "avg_frame_decode_time_ms": "<value written by the local run>"
+}
+
+Expected files:
+outputs/video_smoke/video_1280x720_30_2f_q32.bin
+outputs/video_smoke/video_1280x720_30_2f_q32.json
+outputs/video_smoke/video_1280x720_30_2f_q32_decoded.mp4
+outputs/video_smoke/video_1280x720_30_2f_q32_decoded_decode.json

@@ -1,66 +1,67 @@
 # Model Setup
 
-The INT16 runtime requires a calibrated model bundle (`int16_bundle_v1.0.0.pt`)
-that is **not tracked in git**. There are two ways to get it:
+The runtime needs one model file:
 
-- **Option A (recommended):** Download from the GitHub release — one command,
-  no extra setup required.
-- **Option B:** Build from scratch from the upstream Microsoft DCVC-RT checkpoint
-  — needed if you want to reproduce or re-calibrate the bundle yourself.
-
----
-
-## Option A — Download from GitHub Release
-
-```bash
-python scripts/download_models.py
+```text
+models/int16_bundle_v1.0.0.pt
 ```
 
-This downloads the INT16 bundle from the project's GitHub release, saves it to
-`models/`, and prints its SHA-256 digest. Pass `--sha256 <digest>` to verify
-integrity against a known hash:
+The bundle is published in the GitHub Release instead of being tracked in git.
+Most users should download the release bundle. Building it from upstream DCVC
+checkpoints is only needed if you want to reproduce the model artifact yourself.
+
+## Option A - Download The Release Bundle
+
+Recommended for demos and normal setup:
 
 ```bash
-python scripts/download_models.py --sha256 <hex-digest>
+python scripts/download_models.py --sha256 c1fc2341d3faf28f16b8e77c0869aecddade674aa0b43be2b64c516f49a8554f
 ```
 
-After downloading, verify the runtime loads it:
+This downloads:
+
+```text
+models/int16_bundle_v1.0.0.pt
+```
+
+Expected bundle:
+
+| Field | Value |
+|---|---:|
+| Release tag | `v1.0.0` |
+| File size | `201,024,778` bytes |
+| SHA-256 | `c1fc2341d3faf28f16b8e77c0869aecddade674aa0b43be2b64c516f49a8554f` |
+
+Verify setup:
 
 ```bash
-python encode_mp4_to_bin.py --input_mp4 test.mp4 --frames 2 --check_only
+python scripts/check_setup.py --input_mp4 video.mp4 --require_config --require_cuda --require_bundle
 ```
 
----
+Run a two-frame smoke test:
 
-## Option B — Build from Scratch
+```bash
+python encode_mp4_to_bin.py --input_mp4 video.mp4 --frames 2 --output_dir outputs/video_smoke
+python decode_bin_to_mp4.py --input_bin outputs/video_smoke/video_1280x720_30_2f_q32.bin
+```
 
-Use this path if you want to reproduce the INT16 bundle from the upstream
-Microsoft checkpoint, or if you want to run your own calibration.
+## Option B - Build The Bundle Yourself
 
-#### Step 1 — Obtain the DCVC-RT Checkpoint
+Use this path only if you want to rebuild the model artifact from the upstream
+Microsoft DCVC-RT checkpoints.
 
-Download the DCVC-RT pretrained checkpoints from the official Microsoft DCVC
-repository:
+Download the DCVC-RT pretrained checkpoints from:
 
 - Repository: [https://github.com/microsoft/DCVC](https://github.com/microsoft/DCVC)
-- Checkpoint download links are in
+- Checkpoint instructions:
   [DCVC-family/README.md](https://github.com/microsoft/DCVC/blob/main/DCVC-family/README.md)
 
-You need two `.pth.tar` files:
-- `cvpr2025_image.pth.tar` — I-frame model checkpoint
-- `cvpr2025_video.pth.tar` — P-frame (video) model checkpoint
+You need:
 
-Place both files anywhere on your local machine; the paths are passed as
-arguments in Step 2.
+- `cvpr2025_image.pth.tar`
+- `cvpr2025_video.pth.tar`
 
----
-
-### Step 2 — Build the INT16 Bundle
-
-The bundle export pipeline has three stages. Run them in order from the project
-root with your virtual environment active.
-
-#### 2a. Freeze Entropy CDFs
+Freeze entropy CDFs:
 
 ```bash
 python scripts/freeze_entropy_cdfs.py \
@@ -69,19 +70,7 @@ python scripts/freeze_entropy_cdfs.py \
   --output_path models/frozen_entropy_state.pt
 ```
 
-On Windows (PowerShell):
-
-```powershell
-python scripts/freeze_entropy_cdfs.py `
-  --model_path_i C:\path\to\cvpr2025_image.pth.tar `
-  --model_path_p C:\path\to\cvpr2025_video.pth.tar `
-  --output_path models/frozen_entropy_state.pt
-```
-
-This captures the rANS CDF tables so they remain identical across all future
-encode and decode sessions.
-
-#### 2b. Export the INT16 Bundle
+Export the INT16 bundle:
 
 ```bash
 python scripts/export_int16_bundle.py \
@@ -91,63 +80,13 @@ python scripts/export_int16_bundle.py \
   --output_path models/int16_bundle_v1.0.0.pt
 ```
 
-This quantizes all weights to INT16 and embeds the frozen entropy state.
+Optional activation calibration can be run if you have representative local
+video clips. See [calibration.md](calibration.md) for the detailed engineering
+workflow.
 
-#### 2c. Activation Calibration (optional but recommended)
+## Why The Hash Matters
 
-If you have representative video clips, run activation calibration to refine
-the per-layer INT8 channel scales:
+The encoder and decoder must use the same bundle. The SHA-256 hash lets you
+confirm that the downloaded model file is exactly the expected release file.
 
-```bash
-python scripts/calibrate_int16_bundle.py \
-  --manifest assets/manifests/calibration_manifest.example.json \
-  --bundle_path models/int16_bundle_v1.0.0.pt \
-  --output models/int16_bundle_v1.0.0.pt \
-  --frames_per_clip 300 \
-  --qp 32
-```
-
-Edit `assets/manifests/calibration_manifest.example.json` to point to your
-local clips before running. See [calibration.md](calibration.md) for a full
-guide including clip selection, clamp health checks, and known limitations.
-
----
-
-## Verify the Bundle
-
-After completing the steps above, run the preflight check to confirm the bundle
-loads correctly without running a full encode:
-
-```powershell
-python encode_mp4_to_bin.py --input_mp4 test.mp4 --frames 2 --check_only
-```
-
-Expected output:
-
-```
-[preflight] bundle loaded: models/int16_bundle_v1.0.0.pt
-[preflight] OK
-```
-
-Then run a short smoke encode to verify end-to-end output:
-
-```powershell
-python encode_mp4_to_bin.py --input_mp4 test.mp4 --frames 32 --output_dir outputs/smoke
-python decode_bin_to_mp4.py --input_bin outputs/smoke/<bitstream>.bin
-```
-
----
-
-## Bundle Integrity
-
-Record the SHA-256 digest of your bundle and check it into a sidecar file. This
-lets you confirm that both encoder and decoder machines are using the same
-weights:
-
-```powershell
-python -c "import hashlib, pathlib; d=pathlib.Path('models/int16_bundle_v1.0.0.pt').read_bytes(); print(hashlib.sha256(d).hexdigest())"
-```
-
-Store the printed hash in `models/bundle_sha256.txt` and commit that file.
-If the hash does not match between two machines, the bitstreams they produce
-will not be byte-identical.
+If the bundle hash differs, deterministic bitstream comparisons are not valid.

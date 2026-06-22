@@ -1,5 +1,5 @@
 {
-  "note": "Schema-only example. Do not publish this as validation evidence; replace null and example values with results from your own validated run.",
+  "note": "Schema-only example. This is not validation evidence; fill null and example values from a real run before publishing.",
   "bundle_version": "v1.0.0",
   "bundle_sha256": null,
   "test_clip": {

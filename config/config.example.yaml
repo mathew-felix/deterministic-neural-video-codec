@@ -31,12 +31,11 @@ models:
   # Intermediate frozen entropy tables (produced by Step 1 / pipeline --step freeze)
   frozen_entropy: models/frozen_entropy_state.pt
 
-  # Final INT16 calibrated bundle (produced by Steps 2-3 / pipeline --step export + calibrate)
+  # Final INT16 model bundle.
   bundle: models/int16_bundle_v1.0.0.pt
 
-  # SHA-256 of the bundle — fill this in after building to enable integrity checks.
-  # Get it by running: python scripts/download_models.py --force (prints digest)
-  bundle_sha256: ""
+  # SHA-256 of the v1.0.0 release bundle.
+  bundle_sha256: "c1fc2341d3faf28f16b8e77c0869aecddade674aa0b43be2b64c516f49a8554f"
 
 
 # ---------------------------------------------------------------------------
@@ -91,8 +90,9 @@ encode:
   # Number of frames to encode. -1 encodes the full video.
   frames: -1
 
-  # I-frame and P-frame quantisation parameters. Higher = smaller file, lower quality.
-  # Typical range: 21 (high quality) to 63 (low quality).
+  # DCVC-RT quality index for I-frames and P-frames.
+  # Higher = higher quality/larger bitstream; lower = higher compression.
+  # Typical examples: 63 = high quality, 25 = high compression.
   qp_i: 32
   qp_p: 32
 
@@ -129,6 +129,5 @@ decode:
 # Release settings  (used by scripts/download_models.py)
 # ---------------------------------------------------------------------------
 release:
-  # Direct URL to the INT16 bundle asset in your GitHub release.
-  # Update this after creating the release and set bundle_sha256 above.
-  bundle_url: ""
+  # Direct URL to the INT16 bundle asset in the GitHub release.
+  bundle_url: "https://github.com/mathew-felix/deterministic-neural-video-codec/releases/download/v1.0.0/int16_bundle_v1.0.0.pt"

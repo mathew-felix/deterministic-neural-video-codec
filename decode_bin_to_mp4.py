@@ -4,6 +4,7 @@ import importlib.util
 import io
 import json
 import os
+import shutil
 import struct
 import subprocess
 import sys
@@ -112,6 +113,12 @@ def resolve_path(path_str):
 
 
 def run_command(command):
+    executable = command[0]
+    if shutil.which(executable) is None:
+        raise RuntimeError(
+            f"Required command not found: {executable}. "
+            "Install FFmpeg and make sure ffmpeg/ffprobe are on PATH."
+        )
     completed = subprocess.run(
         command,
         stdout=subprocess.PIPE,

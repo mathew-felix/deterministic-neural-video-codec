@@ -1,62 +1,35 @@
-# Deterministic Neural Video Codec
+# Deterministic INT16 Runtime for DCVC-RT
 
-**10-second version:** this project compresses an MP4 into a deterministic
-INT16 `.bin` video bitstream, decodes it back to MP4, and verifies the result
-with SHA-256 hashes and video quality metrics.
+Research software for reproducible neural video compression using the
+Microsoft DCVC / DCVC-RT model family.
 
-It is derived from the public Microsoft DCVC / DCVC-RT project family. This
-repo is independent and focuses on my deterministic INT16 runtime work.
+> This project does **not** introduce a new neural codec architecture.
+> My contribution is the deterministic INT16 runtime, integration,
+> validation, and reproducibility tooling built around DCVC-RT.
 
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
-[![CUDA](https://img.shields.io/badge/CUDA-11.8%2B-green)](https://developer.nvidia.com/cuda-downloads)
+---
 
-## Project Snapshot
+## Research Motivation
 
-| Question | Answer |
-|---|---|
-| What is it? | A deterministic INT16 neural video codec runtime. |
-| What does it do? | MP4 input -> compressed `.bin` bitstream -> reconstructed MP4. |
-| Upstream lineage | Derived from Microsoft DCVC / DCVC-RT. |
-| Role fit | Software Engineer I, Backend Engineer I, ML Systems Engineer I. |
-| Skills shown | Python, PyTorch, CUDA/C++, FFmpeg, rANS entropy coding, testing. |
-| Proof | 35 tests passed; 2593-frame 1280x720 video encoded and decoded. |
+Neural video codecs can produce different entropy-coded bitstreams when small
+numerical differences occur across runtime environments.
 
-Useful links:
+This project explores an INT16-oriented execution path designed to make
+bitstream generation more reproducible and easier to validate in
+edge-to-server video compression workflows.
 
-- [Demo GIF](assets/demo_before_after.gif)
-- [Quickstart](#quickstart)
-- [Measured results](#measured-results)
-- [Model bundle release](https://github.com/mathew-felix/deterministic-neural-video-codec/releases/tag/v1.0.0)
-
-## Engineering Focus
-
-This is presented as a software engineering project. The work is focused on
-making a neural codec runtime usable, testable, and reproducible:
-
-- Runtime packaging and standalone module structure.
-- Command-line encode/decode tools.
-- CUDA/PyTorch integration and native extension setup.
-- Setup validation with clear environment checks.
-- SHA-256 bitstream verification and JSON metadata.
-- Measured local demo results and documented limitations.
+---
 
 ## What I Built
 
-The upstream Microsoft DCVC project and DCVC-RT implementation provide the
-neural codec lineage. My contribution is the software engineering layer around
-the deterministic INT16 runtime:
+- INT16-oriented DCVC-RT-family encode/decode runtime
+- PyTorch and CUDA/C++ integration
+- rANS entropy-coded `.bin` bitstreams
+- FFmpeg-based MP4 preprocessing and reconstruction
+- SHA-256 and byte-level bitstream validation
+- Runtime metadata and automated tests
 
-- MP4 encode/decode command-line tools.
-- Signed INT16 codec path around a DCVC-RT-family model flow.
-- CUDA/PyTorch runtime integration.
-- rANS entropy-coded `.bin` output.
-- SHA-256 and byte-level bitstream comparison.
-- Setup checker, tests, demo assets, and measured result artifacts.
-- Small Python API in [`codec.py`](codec.py) for programmatic encode/decode.
-
-This is not a Microsoft product and is not affiliated with, endorsed by, or
-sponsored by Microsoft. See [docs/provenance.md](docs/provenance.md).
+---
 
 ## Architecture
 
@@ -71,6 +44,43 @@ flowchart LR
     C --> H[JSON metrics and SHA-256 metadata]
     E --> I[Bitstream hash comparison]
 ```
+
+## Validation
+
+The runtime was evaluated on a 2,593-frame, 1280×720, 30 FPS video.
+
+| Metric | Result |
+| --- | ---: |
+| Bitstream size | 4.82 MB |
+| Mean RGB PSNR | 28.90 dB |
+| Mean RGB MS-SSIM | 0.9336 |
+| Automated tests | 35 passed |
+
+A same-environment determinism test produced identical SHA-256 hashes and
+byte-for-byte identical bitstreams across repeated runs.
+
+These results represent one tested configuration and are intended as
+implementation-validation results rather than a comprehensive codec benchmark.
+
+---
+
+## Research Context
+
+This runtime supports my broader work in neural video compression and was used
+in the following accepted paper:
+
+> **FaunaCodec: ROI-Aware Video Compression and Reconstruction for Wildlife Monitoring**  
+> Mykhailo Sakevych, **Felix Mathew**, and Vangelis Metsis  
+> Accepted short paper, **IEEE ICTAI 2026**
+
+FaunaCodec studies ROI-aware wildlife video compression across neural and
+conventional codecs. This repository focuses specifically on the deterministic
+neural codec runtime and reproducibility layer.
+
+---
+
+
+
 
 ## Quickstart
 
@@ -235,45 +245,50 @@ deterministic-neural-video-codec/
   outputs/                      generated runs, not committed
 ```
 
-## Known Limitations
+## Limitations
 
-- Requires an NVIDIA CUDA GPU for real encode/decode.
-- Not real-time in the current tested setup.
-- Native CUDA/C++ extensions require build tools.
-- Model bundle files are not committed and must be downloaded or built locally.
-- Deterministic claims require the same equivalence class: input frames, bundle
-  SHA-256, QP, frame count, reset interval, runtime flags, source revision,
-  PyTorch/CUDA versions, and native extension behavior.
-- Cross-device claims should be treated as validation tasks until the release
-  bundle URL and hash are verified on each target machine.
+- Current validation is primarily same-environment.
+- Cross-device bit-exact reproducibility should be verified explicitly.
+- The current implementation requires an NVIDIA CUDA GPU.
+- The tested runtime is not real-time.
+- The project does not claim a new codec architecture or state-of-the-art
+  rate-distortion performance.
 
-## Resume Bullets
+---
 
-- Packaged a deterministic INT16 neural video codec runtime with PyTorch, CUDA
-  extensions, FFmpeg, and rANS entropy coding to generate hash-checkable video
-  bitstreams.
-- Built command-line MP4 encode/decode workflows with setup validation, runtime
-  metadata, SHA-256 bitstream comparison, and PSNR/MS-SSIM quality measurement.
-- Validated the runtime on a 2593-frame 1280x720 video with 35 passing tests
-  covering entropy coding, bitstream comparison, INT16 backend behavior, and
-  CUDA kernel parity.
+## Related Work
 
-See [docs/resume_bullets.md](docs/resume_bullets.md) for a copy-ready version.
+- [M.S. Thesis Record](https://hdl.handle.net/10877/24790)
+- [ROI-Aware Wildlife Video Compression Project](https://github.com/mathew-felix/roi-wildlife-video-compression)
 
-## More Documentation
+---
 
-- [Architecture](docs/architecture.md)
-- [Demo](docs/demo.md)
-- [Demo presentation guide](docs/demo_presentation.md)
-- [Results](docs/results.md)
-- [Validation protocol](docs/validation.md)
-- [Model setup](docs/model_setup.md)
-- [GitHub release text](docs/release_notes_v1.0.0.md)
-- [Reproducibility guide](REPRODUCE.md)
-- [Known provenance](docs/provenance.md)
+## Author
+
+**Felix Mathew**  
+M.S. Computer Science, Texas State University
+
+Research interests: Neural Video Compression, Computer Vision, Edge AI,
+Multimedia Systems, Efficient Machine Learning
+
+- [GitHub](https://github.com/mathew-felix)
+- [LinkedIn](https://www.linkedin.com/in/mathew-felix)
+
+---
+
+## Attribution
+
+The neural codec architecture is derived from the public Microsoft DCVC /
+DCVC-RT project family.
+
+This repository contains my runtime adaptation, deterministic execution path,
+validation tooling, and reproducibility infrastructure.
+
+See [`NOTICE`](NOTICE) and [`docs/provenance.md`](docs/provenance.md) for
+additional attribution details.
+
+---
 
 ## License
 
-This project is licensed under the Apache License 2.0. Portions of this work
-are derived from the Microsoft DCVC project, copyright Microsoft Corporation,
-licensed under the MIT License. See [NOTICE](NOTICE).
+Apache License 2.0.
